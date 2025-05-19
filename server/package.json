@@ -12,6 +12,8 @@
   "type": "module",
   "dependencies": {
     "@libsql/client": "^0.15.6",
-    "drizzle-orm": "^0.43.1"
+    "burger-api": "^0.2.3",
+    "drizzle-orm": "^0.43.1",
+    "neverthrow": "^8.2.0"
   }
 }
