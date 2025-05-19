@@ -1,0 +1,334 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "a05fc8e2-6e81-449e-a287-8266c0796f8d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "Files": {
+      "name": "Files",
+      "columns": {
+        "file_id": {
+          "name": "file_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "owner_user_id": {
+          "name": "owner_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_original_filename": {
+          "name": "encrypted_original_filename",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "filename_encryption_iv": {
+          "name": "filename_encryption_iv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_content_auth_tag": {
+          "name": "file_content_auth_tag",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_size_bytes": {
+          "name": "file_size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "upload_timestamp": {
+          "name": "upload_timestamp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        }
+      },
+      "indexes": {
+        "Files_storage_path_unique": {
+          "name": "Files_storage_path_unique",
+          "columns": [
+            "storage_path"
+          ],
+          "isUnique": true
+        },
+        "fk_Files_Owner_Users_idx": {
+          "name": "fk_Files_Owner_Users_idx",
+          "columns": [
+            "owner_user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "Files_owner_user_id_Users_user_id_fk": {
+          "name": "Files_owner_user_id_Users_user_id_fk",
+          "tableFrom": "Files",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "owner_user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "User_File_Access": {
+      "name": "User_File_Access",
+      "columns": {
+        "access_id": {
+          "name": "access_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kyber_encapsulated_key": {
+          "name": "kyber_encapsulated_key",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_dek_with_shared_secret": {
+          "name": "encrypted_dek_with_shared_secret",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dek_encryption_iv": {
+          "name": "dek_encryption_iv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shared_by_user_id": {
+          "name": "shared_by_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "access_granted_at": {
+          "name": "access_granted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        }
+      },
+      "indexes": {
+        "uq_user_file_access_idx": {
+          "name": "uq_user_file_access_idx",
+          "columns": [
+            "user_id",
+            "file_id"
+          ],
+          "isUnique": true
+        },
+        "fk_UFA_Users_idx": {
+          "name": "fk_UFA_Users_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "fk_UFA_Files_idx": {
+          "name": "fk_UFA_Files_idx",
+          "columns": [
+            "file_id"
+          ],
+          "isUnique": false
+        },
+        "fk_UFA_SharedBy_idx": {
+          "name": "fk_UFA_SharedBy_idx",
+          "columns": [
+            "shared_by_user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "User_File_Access_user_id_Users_user_id_fk": {
+          "name": "User_File_Access_user_id_Users_user_id_fk",
+          "tableFrom": "User_File_Access",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        },
+        "User_File_Access_file_id_Files_file_id_fk": {
+          "name": "User_File_Access_file_id_Files_file_id_fk",
+          "tableFrom": "User_File_Access",
+          "tableTo": "Files",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "file_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        },
+        "User_File_Access_shared_by_user_id_Users_user_id_fk": {
+          "name": "User_File_Access_shared_by_user_id_Users_user_id_fk",
+          "tableFrom": "User_File_Access",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "shared_by_user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "Users": {
+      "name": "Users",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_auth_verifier": {
+          "name": "password_auth_verifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_auth_salt": {
+          "name": "password_auth_salt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_public_key": {
+          "name": "user_public_key",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_sk_protection_salt": {
+          "name": "client_sk_protection_salt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%s', 'now'))"
+        }
+      },
+      "indexes": {
+        "Users_username_unique": {
+          "name": "Users_username_unique",
+          "columns": [
+            "username"
+          ],
+          "isUnique": true
+        },
+        "Users_client_sk_protection_salt_unique": {
+          "name": "Users_client_sk_protection_salt_unique",
+          "columns": [
+            "client_sk_protection_salt"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
