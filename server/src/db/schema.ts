@@ -16,9 +16,8 @@ export const usersTable = sqliteTable("Users", {
   user_id: integer("user_id").primaryKey({ autoIncrement: true }),
   username: text("username").notNull().unique(),
 
-  // For password authentication (SRP verifier and salt)
-  password_auth_verifier: text("password_auth_verifier").notNull(),
-  password_auth_salt: text("password_auth_salt"), // Nullable as per SQL (VARCHAR(64) NULL)
+  password_hash: text("password_hash").notNull(),
+  password_salt: text("password_salt").notNull(),
 
   // The user's raw public identity key (CRYSTALS-Kyber public key).
   // Stored as raw bytes. Drizzle handles this as Uint8Array with Bun's SQLite.

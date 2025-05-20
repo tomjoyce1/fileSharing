@@ -5,12 +5,10 @@ const burger = new Burger({
   // --- Required ---
   apiDir: "src/api",
 
-  // --- Optional but Recommended ---
   title: "PacketSniffers File Store API",
   version: process.env.API_VERSION!,
 
-  // --- Other Optional Settings ---
-  apiPrefix: "api",
+  apiPrefix: "api", // (so /api/register/route.ts can be accessed as /api/register)
   description: "An amazing API built with BurgerAPI",
   debug: process.env.NODE_ENV === "development",
 });

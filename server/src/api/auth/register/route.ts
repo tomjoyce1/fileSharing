@@ -11,17 +11,13 @@ export const schema = {
     body: z.object({
       username: Username,
 
-      // SRP params
-      password_auth_salt: HexString.describe("SRP salt (s), hex encoded").max(
-        64
-      ),
-      password_auth_verifier: HexString.describe(
-        "SRP verifier (v), hex encoded"
-      ).max(64),
+      password_hash: HexString.describe("Password hash, hex encoded").max(256),
+      password_salt: HexString.describe("Password salt, hex encoded").max(64),
 
       user_public_key: Base64String.describe(
         "User's Kyber public key, base64 encoded"
-      ).max(512),
+      ).max(2048),
+
       client_sk_protection_salt: HexString.describe(
         "Salt for client-side SK protection, hex encoded"
       ).max(64),
@@ -31,15 +27,15 @@ export const schema = {
 
 async function registerUser(
   username: string,
-  password_auth_salt: string,
-  password_auth_verifier: string,
+  password_hash: string,
+  password_salt: string,
   user_public_key: Buffer,
   client_sk_protection_salt: string
 ): Promise<ResultAsync<void, Error>> {
   const insertData = {
     username,
-    password_auth_salt,
-    password_auth_verifier,
+    password_hash,
+    password_salt,
     user_public_key,
     client_sk_protection_salt,
   };
@@ -58,6 +54,7 @@ export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
   // Validation somehow was skipped
+  // (should not happen, but recommended by docs)
   if (!req.validated?.body) {
     return Response.json(
       {
@@ -69,8 +66,8 @@ export async function POST(
 
   const {
     username,
-    password_auth_salt,
-    password_auth_verifier,
+    password_hash,
+    password_salt,
     user_public_key,
     client_sk_protection_salt,
   } = req.validated.body;
@@ -92,8 +89,8 @@ export async function POST(
 
   const registerResult = await registerUser(
     username,
-    password_auth_salt,
-    password_auth_verifier,
+    password_hash,
+    password_salt,
     decodedPublicKey,
     client_sk_protection_salt
   );
@@ -110,6 +107,6 @@ export async function POST(
     {
       message: "User registered",
     },
-    { status: 200 }
+    { status: 201 }
   );
 }
