@@ -1,49 +1,90 @@
+// src/api/auth/login/route.ts
 import { z } from "zod";
-import { HexString, Username } from "~/utils/schema";
+import { Username, HexString } from "~/utils/schema";
 import { eq } from "drizzle-orm";
 import { db } from "~/db";
 import { usersTable } from "~/db/schema";
 import crypto from "node:crypto";
 import { BurgerRequest } from "burger-api";
-import { ok, err, ResultAsync, fromPromise } from "neverthrow";
+import { fromPromise } from "neverthrow";
 
 export const schema = {
   post: {
     body: z.object({
       username: Username,
-      password_hash: HexString.max(256),
+      password_hash: HexString.describe("Client-derived hash").max(256),
     }),
   },
 };
 
-function timingSafeEqualHex(a: string, b: string): boolean {
-  // If lengths differ, TSE throws → normalise first
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+const MIN_PROCESS_MS = 100;
+
+/** Constant-time hex comparison, returns false on any error */
+function timingSafeHexCompare(a: string, b: string): boolean {
+  try {
+    // If lengths differ, this still throws inside timingSafeEqual
+    return crypto.timingSafeEqual(
+      Buffer.from(a, "hex"),
+      Buffer.from(b, "hex")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
-  if (!req.validated?.body)
-    return Response.json({ message: "Validation skipped" }, { status: 500 });
+  const start = Date.now();
+
+  // 1. Generic 500 on missing validation
+  if (!req.validated?.body) {
+    return Response.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
 
   const { username, password_hash } = req.validated.body;
 
-  // fetch stored hash
-  const row = await db
-    .select({ storedHash: usersTable.password_hash })
-    .from(usersTable)
-    .where(eq(usersTable.username, username))
-    .get();
+  // 2. Wrap DB fetch in neverthrow
+  const rowResult = await fromPromise(
+    db
+      .select({ storedHash: usersTable.password_hash })
+      .from(usersTable)
+      .where(eq(usersTable.username, username))
+      .get(),
+    (e) => (e instanceof Error ? e : new Error(String(e)))
+  );
 
-  // Always run constant-time compare to reduce timing oracle
-  const storedHash = row?.storedHash ?? crypto.randomBytes(32).toString("hex");
-  const okLogin = timingSafeEqualHex(password_hash, storedHash);
+  if (rowResult.isErr()) {
+    return Response.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
 
-  if (!okLogin)
-    return Response.json({ message: "Invalid credentials" }, { status: 401 });
+  // 3. Constant-time path for existing vs missing user
+  const fallback = crypto.randomBytes(32).toString("hex");
+  const storedHash = rowResult.value?.storedHash ?? fallback;
 
-  // TODO: issue JWT or cookie; placeholder for now
-  return Response.json({ ok: true, message: "Authenticated" });
+  const isValid = timingSafeHexCompare(password_hash, storedHash);
+
+  const elapsed = Date.now() - start;
+  if (elapsed < MIN_PROCESS_MS) {
+    await new Promise((r) => setTimeout(r, MIN_PROCESS_MS - elapsed));
+  }
+
+  if (!isValid) {
+    return Response.json(
+      { message: "Invalid credentials" },
+      { status: 401 }
+    );
+  }
+
+  // 4. Success: 200 with no 'ok' flag
+  return Response.json(
+    { message: "Authenticated" },
+    { status: 200 }
+  );
 }

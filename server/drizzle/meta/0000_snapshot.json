@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a05fc8e2-6e81-449e-a287-8266c0796f8d",
+  "id": "d48d142e-139e-4abb-a907-acd3a93356c4",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "Files": {
@@ -254,18 +254,18 @@
           "notNull": true,
           "autoincrement": false
         },
-        "password_auth_verifier": {
-          "name": "password_auth_verifier",
+        "password_hash": {
+          "name": "password_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "password_auth_salt": {
-          "name": "password_auth_salt",
+        "password_salt": {
+          "name": "password_salt",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "user_public_key": {

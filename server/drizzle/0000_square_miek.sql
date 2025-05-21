@@ -33,8 +33,8 @@ CREATE INDEX `fk_UFA_SharedBy_idx` ON `User_File_Access` (`shared_by_user_id`);-
 CREATE TABLE `Users` (
 	`user_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`username` text NOT NULL,
-	`password_auth_verifier` text NOT NULL,
-	`password_auth_salt` text,
+	`password_hash` text NOT NULL,
+	`password_salt` text NOT NULL,
 	`user_public_key` blob NOT NULL,
 	`client_sk_protection_salt` text NOT NULL,
 	`created_at` integer DEFAULT (strftime('%s', 'now')) NOT NULL,
