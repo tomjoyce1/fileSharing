@@ -6,7 +6,13 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Gui Qml Quick Svg)
+# only these C++ components:
+find_package(Qt6 REQUIRED COMPONENTS
+        Gui
+        Qml
+        Quick
+        QuickControls2
+)
 
 add_executable(epic_desktop
         src/main.cpp
@@ -16,7 +22,7 @@ target_link_libraries(epic_desktop PRIVATE
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
-        Qt6::Svg
+        Qt6::QuickControls2
 )
 
 qt_policy(SET QTP0001 NEW)
@@ -29,11 +35,12 @@ qt6_add_qml_module(epic_desktop
         qml/Sidebar.qml
         qml/FileTable.qml
         qml/FileRow.qml
+        qml/HoverIcon.qml    # include your custom component
 )
 
-qt6_add_resources(epic_desktop FILES icons.qrc)
+qt6_add_resources(epic_desktop FILES icons.qrc fonts.qrc)
 
- qt6_import_plugins(epic_desktop
-     INCLUDE_BY_TYPE imageformats Qt6::QSvgPlugin
- )
+qt6_import_plugins(epic_desktop
+)
+
 qt_finalize_executable(epic_desktop)

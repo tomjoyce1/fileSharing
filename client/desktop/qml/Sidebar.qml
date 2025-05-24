@@ -1,13 +1,13 @@
-// qml/Sidebar.qml
-import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Controls.Material 2.15
+import QtQuick.Layouts 1.15
 
 Rectangle {
     id: root
-    width: 220                         // fixed width
-    color: "#1f2937"                   // dark surface (tailwind gray-800)
-    border.color: "#374151"
+    width: 220
+    color: Material.surface
+    border.color: Material.divider
     border.width: 1
 
     ColumnLayout {
@@ -19,7 +19,7 @@ Rectangle {
             text: "Gobbler"
             font.pixelSize: 22
             font.bold: true
-            color: "#3b82f6"
+            color: Material.accent
         }
 
         ColumnLayout {
@@ -36,9 +36,13 @@ Rectangle {
             }
         }
 
-        Item { Layout.fillHeight: true }      // pushes storage bar to bottom
+        Item { Layout.fillHeight: true }
 
-        Label { text: "Storage used: 75 %" ; color: "#d1d5db" }
+        Label {
+            text: "Storage used: 75%"
+            color: Material.onSurface      // ← use onSurface, not onSurfaceVariant
+        }
+
         ProgressBar {
             value: 0.75
             Layout.fillWidth: true

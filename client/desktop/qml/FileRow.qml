@@ -1,63 +1,91 @@
-// qml/FileRow.qml  – self-contained, reusable row component
-import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Controls.Material 2.15
+import QtQuick.Layouts 1.15
 
 Item {
+    id: root
     width: ListView.view ? ListView.view.width : 640
-    height: 38
+    height: 48
 
-    /* public properties */
-    property alias fileName     : nameLabel.text
-    property string fileSize    : "—"
-    property string modified    : "—"
-    property string sharedTo    : "—"
-    property url    iconSource  : ""
+    // expose these so the delegate can bind into them:
+    property alias fileName: nameLabel.text
+    property alias fileSize: sizeLabel.text
+    property alias modified: modifiedLabel.text
+    property alias sharedTo: sharedLabel.text
 
     signal downloadRequested()
     signal shareRequested()
     signal menuRequested()
 
-    /* background highlight rectangle */
     Rectangle {
-        id: bg
         anchors.fill: parent
-        radius: 3
-        color: bg.hovered ? "#2f3948" : "transparent"
-        z: -1            /* behind the row content */
-        property bool hovered: false
+        radius: 4
+        color: hoverArea.containsMouse
+            ? Material.accent.lighter(1.4)
+            : "transparent"
+        z: -1
     }
 
-    /* actual row content */
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 16
+        anchors.margins: 8
+        spacing: 12
 
-        Image {                         // use the normal Image element
-            source: iconSource
-            width: 20; height: 20
-            fillMode: Image.PreserveAspectFit
+        Label {
+            id: nameLabel
+            Layout.preferredWidth: 300
+            Layout.fillHeight: true
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
         }
 
-        Label { id: nameLabel; Layout.preferredWidth: 250; elide: Text.ElideRight }
+        Label {
+            id: sizeLabel
+            Layout.preferredWidth: 100
+            Layout.fillHeight: true
+            horizontalAlignment: Text.AlignRight
+            verticalAlignment: Text.AlignVCenter
+        }
 
-        Label { text: fileSize ; Layout.preferredWidth: 80 ; horizontalAlignment: Text.AlignRight }
-        Label { text: modified ; Layout.preferredWidth: 120 }
-        Label { text: sharedTo ; Layout.preferredWidth: 80 ; horizontalAlignment: Text.AlignRight }
+        Label {
+            id: modifiedLabel
+            Layout.preferredWidth: 140
+            Layout.fillHeight: true
+            verticalAlignment: Text.AlignVCenter
+        }
 
-        Item { Layout.fillWidth: true }      // spacer
+        Label {
+            id: sharedLabel
+            Layout.preferredWidth: 100
+            Layout.fillHeight: true
+            horizontalAlignment: Text.AlignRight
+            verticalAlignment: Text.AlignVCenter
+        }
 
-        ToolButton { icon.name: "download"; onClicked: downloadRequested() }
-        ToolButton { icon.name: "share"   ; onClicked: shareRequested()    }
-        ToolButton { text: "\u22ee"; font.pixelSize: 18; onClicked: menuRequested() }
+        Item { Layout.fillWidth: true }
+
+        ToolButton {
+            icon.name: "download"
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: downloadRequested()
+        }
+        ToolButton {
+            icon.name: "share"
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: shareRequested()
+        }
+        ToolButton {
+            text: "\u22EE"
+            font.pixelSize: 18
+            Layout.alignment: Qt.AlignVCenter
+            onClicked: menuRequested()
+        }
     }
 
-    /* hover handler */
     MouseArea {
+        id: hoverArea
         anchors.fill: parent
         hoverEnabled: true
-        onEntered: bg.hovered = true
-        onExited : bg.hovered = false
     }
 }
