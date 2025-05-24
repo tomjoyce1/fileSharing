@@ -12,10 +12,12 @@ find_package(Qt6 REQUIRED COMPONENTS
         Qml
         Quick
         QuickControls2
+        QuickDialogs
 )
 
 add_executable(epic_desktop
         src/main.cpp
+        src/FileDialogHelper.h
 )
 
 target_link_libraries(epic_desktop PRIVATE
@@ -23,6 +25,7 @@ target_link_libraries(epic_desktop PRIVATE
         Qt6::Qml
         Qt6::Quick
         Qt6::QuickControls2
+        Qt6::QuickDialogs
 )
 
 qt_policy(SET QTP0001 NEW)
@@ -35,8 +38,9 @@ qt6_add_qml_module(epic_desktop
         qml/Sidebar.qml
         qml/FileTable.qml
         qml/FileRow.qml
-        qml/HoverIcon.qml    # include your custom component
+        qml/FileUploadArea.qml
 )
+
 
 qt6_add_resources(epic_desktop FILES icons.qrc fonts.qrc)
 
