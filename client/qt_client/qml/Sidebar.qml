@@ -1,39 +1,37 @@
 // Sidebar.qml
-import QtQuick          2.15
+import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
-import QtQuick.Layouts  1.15
+import QtQuick.Layouts 1.15
 
 Rectangle {
     id: root
     width: 220
     color: Material.color(Material.DeepPurple, Material.Shade200)
-    border.color: Material.divider
-    border.width: 1
 
-    // 1) Load your Material Icons font from the resource bundle
+    // load your bundled Material Icons font
     FontLoader {
         id: materialIcons
         source: "qrc:/resources/fonts/MaterialIcons-Regular.ttf"
-        onStatusChanged: console.log("Icon-font status:", status, name)
+        onStatusChanged: console.log("FontLoader:", status, materialIcons.name)
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 0
+        anchors.margins: 14
+        spacing: 10
 
-        // — Logo / Title —
+        // — Logo —
         Label {
-            text: "Gobbler"
-            font.pixelSize: 22
+            text: "SSShare"
+            font.pixelSize: 28
             font.bold: true
-            color: Material.DeepPurple700
+            color: Material.color(Material.DeepPurple, Material.Shade700)
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
         }
 
-        // — Navigation items —
+        // — Nav data —
         ListModel {
             id: navModel
             ListElement { iconCode: "\uE2C8"; labelText: qsTr("All files") }
@@ -41,92 +39,63 @@ Rectangle {
             ListElement { iconCode: "\uE7EF"; labelText: qsTr("Shared with me") }
         }
 
-        ColumnLayout {
-            spacing: 4
+        Repeater {
+                    model: navModel
+                    delegate: Rectangle {
+                        id: navItem
+                        width: parent ? parent.width : root.width
+                        height: 30
+                        color: "transparent"
+                        property bool hovered: false
+                        Layout.fillWidth: true
 
-            Repeater {
-                model: navModel
-                delegate: ToolButton {
-                    // enable hovered, remove manual MouseArea
-                    hoverEnabled: true
-                    flat: true
-                    Layout.fillWidth: true
-                    height: 40
-                    leftPadding: 8; rightPadding: 8; topPadding: 4; bottomPadding: 4
+                        // icon + text, flush-left with 8px gap
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
 
-                    background: Rectangle {
-                        anchors.fill: parent
-                        radius: 4
-                        color: hovered
-                              ? Material.color(Material.DeepPurple, Material.Shade300)
-                              : "transparent"
-                    }
+                            Label {
+                                font.family: materialIcons.name
+                                font.pixelSize: 20
+                                text: iconCode
+                                color: navItem.hovered
+                                    ? Material.accent
+                                    : "#212121"
+                            }
 
-                    contentItem: RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 8
-
-                        // icon glyph
-                        Label {
-                            font.family: materialIcons.name
-                            font.pixelSize: 20
-                            text: iconCode
-                            color: hovered
-                                  ? Material.accent
-                                  : Material.onSurface
+                            Label {
+                                text: labelText
+                                font.pixelSize: 16
+                                color: navItem.hovered
+                                    ? Material.accent
+                                    : "#212121"
+                            }
                         }
 
-                        // text label
-                        Label {
-                            text: labelText
-                            font.pixelSize: 16
-                            color: hovered
-                                  ? Material.accent
-                                  : Material.onSurface
+                        // MUST come *after* your Row so it's on top
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered:  navItem.hovered = true
+                            onExited:   navItem.hovered = false
+                            onClicked:  console.log("nav to", labelText)
                         }
                     }
-
-                    onClicked: console.log("Navigate to", labelText)
                 }
-            }
+
+
+
+        // FileUploadArea
+        FileUploadArea {
+            // signals: uploadRequested, cancelRequested…
         }
 
-        // — divider —
-        Rectangle {
-            height: 1
-            color: Material.divider.lighter(1.5)
-            Layout.fillWidth: true
-            Layout.margins: 12
-        }
 
-        // — FileUploadArea —
-        Frame {
-            background: Rectangle {
-                color: Material.surface
-                border.color: Material.divider
-                radius: 8
-            }
-            Layout.fillWidth: true
-            Layout.preferredHeight: 140
-
-            FileUploadArea {
-                anchors.fill: parent
-                anchors.margins: 8
-            }
-        }
-
-        // — divider —
-        Rectangle {
-            height: 1
-            color: Material.divider.lighter(1.5)
-            Layout.fillWidth: true
-            Layout.margins: 12
-        }
-
-        // — Storage usage —
+        // storage usage
         Label {
-            text: qsTr("Storage used: %1%").arg(75)
+            text: qsTr("Storage used: 75%")
             font.pixelSize: 14
             color: Material.onSurfaceVariant
             Layout.margins: 8

@@ -1,4 +1,3 @@
-// FileUploadArea.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
@@ -7,7 +6,7 @@ import QtQuick.Layouts 1.15
 Item {
     id: root
     Layout.fillWidth: true
-    Layout.preferredHeight: 200
+    Layout.preferredHeight: 180
 
     signal filesDropped(var urls)
     signal uploadRequested(var urls)
@@ -15,81 +14,104 @@ Item {
 
     property var lastFiles: []
 
-    ColumnLayout {
+    Rectangle {
+        id: frame
         anchors.fill: parent
-        anchors.margins: 8
-        spacing: 12
+        color: Material.color(Material.DeepPurple, Material.Shade100)
+        border.color: "white"
+        border.width: 1
+        radius: 8
 
-        // — Dashed drop region —
-        Item {
-            id: dropFrame
-            Layout.fillWidth: true
-            Layout.preferredHeight: 120
-
-            // Canvas draws the dashed border
-            Canvas {
-                anchors.fill: parent
-                onPaint: {
-                    var ctx = getContext("2d");
-                    ctx.clearRect(0,0,width,height);
-                    ctx.setLineWidth(1);
-                    ctx.strokeStyle = Material.divider;
-                    ctx.setLineDash([4,4]);
-                    ctx.strokeRect(0.5,0.5,width-1,height-1);
-                }
-            }
-
-            // Accept drag-and-drop
-            DropArea {
-                anchors.fill: parent
-                onDropped: {
-                    root.lastFiles = drop.urls;
-                    filesDropped(drop.urls);
-                }
-            }
-
-            // Centered instructions & Browse link
-            ColumnLayout {
-                anchors.centerIn: parent
-                spacing: 4
-
-
-                Label {
-                    text: qsTr("Drop files here")
-                    font.pixelSize: 14
-                    color: Material.onSurface
-                }
-                Label {
-                    text: qsTr("or")
-                    font.pixelSize: 12
-                    color: Material.onSurfaceVariant
-                }
-                Button {
-                    text: qsTr("Browse files")
-                    flat: true
-                    background: Rectangle { color: "transparent" }
-                    font.pixelSize: 14
-
-                    onClicked: cancelRequested()    // hook this up to open your file dialog
-                }
+        DropArea {
+            anchors.fill: parent
+            onDropped: {
+                root.lastFiles = drop.urls
+                filesDropped(drop.urls)
             }
         }
 
-        // — Action buttons —
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 16
+            id: column
+
+
+            Label {
+                text: qsTr("Drop Files Here")
+                font.pixelSize: 16
+                color: Material.onSurface
+                horizontalAlignment: Text.AlignHCenter
+                Layout.alignment: Qt.AlignHCenter
+                topPadding: 10
+
+            }
+
+            Label {
+                text: qsTr("OR")
+                font.pixelSize: 12
+                color: Material.color(Material.DeepPurple, Material.Shade400)
+                horizontalAlignment: Text.AlignHCenter
+                Layout.alignment: Qt.AlignHCenter
+            }
+
 
             Button {
-                text: qsTr("Cancel")
-                flat: true
-                onClicked: cancelRequested()
+                text: qsTr("Browse files")
+               flat: true
+               leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+               background: Rectangle { color: "transparent" }
+               font.pixelSize: 16
+               Layout.alignment: Qt.AlignHCenter
+
             }
-            Button {
-                text: qsTr("Upload")
-                enabled: lastFiles.length > 0
-                onClicked: uploadRequested(lastFiles)
+
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 5
+                anchors.bottom: column.bottom
+
+
+                Button {
+                    id: uploadBtn
+                    text: qsTr("Upload")
+                    enabled: root.lastFiles.length > 0
+                    width: 50; height: 30
+                    background: Rectangle {
+                        color: Material.surface
+                        border.color: Material.accent
+                        border.width: 1
+                        radius: 4
+                    }
+                    contentItem: Label {
+                        text: uploadBtn.text
+                        anchors.centerIn: parent
+                        font.pixelSize: 11
+                        color: Material.accent
+                    }
+                    onClicked: uploadRequested(root.lastFiles)
+                }
+
+
+                Button {
+                    id: cancelBtn
+                    text: qsTr("Cancel")
+                    width: 50; height: 30
+                    background: Rectangle {
+                        color: Material.accent
+                        radius: 4
+                    }
+                    contentItem: Label {
+                        text: cancelBtn.text
+                        anchors.centerIn: parent
+                        font.pixelSize: 11
+                        color: Material.surface
+                    }
+                    onClicked: cancelRequested()
+                }
             }
+
         }
     }
 }
