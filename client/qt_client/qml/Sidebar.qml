@@ -7,7 +7,7 @@ import QtQuick.Layouts 1.15
 Rectangle {
     id: root
     width: 220
-    color: Material.color(Material.DeepPurple, Material.Shade200)
+    color: white
 
     // load your bundled Material Icons font
     FontLoader {
@@ -80,6 +80,7 @@ Rectangle {
                             hoverEnabled: true
                             onEntered:  navItem.hovered = true
                             onExited:   navItem.hovered = false
+                            cursorShape: Qt.PointingHandCursor
                             onClicked:  console.log("nav to", labelText)
                         }
                     }

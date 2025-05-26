@@ -1,84 +1,131 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
-import QtQuick.Layouts 1.15
 
 Item {
     id: root
     width: ListView.view ? ListView.view.width : 640
     height: 48
 
-    // expose these so the delegate can bind into them:
-    property alias fileName: nameLabel.text
-    property alias fileSize: sizeLabel.text
-    property alias modified: modifiedLabel.text
-    property alias sharedTo: sharedLabel.text
+    // load Material Icons font
+    FontLoader {
+        id: materialIcons
+        source: "qrc:/resources/fonts/MaterialIcons-Regular.ttf"
+    }
+
+    // --- restore these two properties! ---
+    property string fileIcon: {
+        var ext = fileName.split(".").pop().toLowerCase()
+        switch(ext) {
+        case "zip":   return "\ueb2c"
+        case "pdf":   return "\uE415"
+        case "jpg": case "jpeg": case "png": return "\uE3F4"
+        case "ppt": case "pptx": return "\uE24E"
+        case "xls": case "xlsx": return "\uE24F"
+        case "doc": case "docx": return "\uE24D"
+        default:      return "\uE24D"
+        }
+    }
+    property color fileColor: {
+        var ext = fileName.split(".").pop().toLowerCase()
+        switch(ext) {
+        case "zip":  return "#8D6E63"
+        case "pdf":  return "#E53935"
+        case "jpg": case "jpeg": case "png": return "#43A047"
+        case "ppt": case "pptx": return "#FB8C00"
+        case "xls": case "xlsx": return "#43A047"
+        case "doc": case "docx": return "#1E88E5"
+        default:     return "#757575"
+        }
+    }
+    // ---------------------------------------
+
+    // row data (set by FileTable.delegate)
+    property alias fileName:   nameLabel.text
+    property alias fileSize:   sizeLabel.text
+    property alias modified:   modifiedLabel.text
+    property alias sharedTo:   sharedLabel.text
 
     signal downloadRequested()
     signal shareRequested()
     signal menuRequested()
 
+    // hover highlight
     Rectangle {
         anchors.fill: parent
         radius: 4
         color: hoverArea.containsMouse
-            ? Material.accent.lighter(1.4)
+            ? Material.color(Material.DeepPurple, Material.Shade100)
             : "transparent"
         z: -1
     }
 
-    RowLayout {
+    Row {
         anchors.fill: parent
         anchors.margins: 8
         spacing: 12
 
+        // file-type icon
+        Label {
+            font.family: materialIcons.name
+            font.pixelSize: 20
+            text: fileIcon
+            color: fileColor
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        // name
         Label {
             id: nameLabel
-            Layout.preferredWidth: 300
-            Layout.fillHeight: true
             elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
+            width: 256
+            anchors.verticalCenter: parent.verticalCenter
         }
 
+        // size
         Label {
             id: sizeLabel
-            Layout.preferredWidth: 100
-            Layout.fillHeight: true
+            width: 100
             horizontalAlignment: Text.AlignRight
-            verticalAlignment: Text.AlignVCenter
+            anchors.verticalCenter: parent.verticalCenter
         }
 
+        // modified
         Label {
             id: modifiedLabel
-            Layout.preferredWidth: 140
-            Layout.fillHeight: true
-            verticalAlignment: Text.AlignVCenter
+            width: 140
+            anchors.verticalCenter: parent.verticalCenter
         }
 
+        // shared to
         Label {
             id: sharedLabel
-            Layout.preferredWidth: 100
-            Layout.fillHeight: true
+            width: 100
             horizontalAlignment: Text.AlignRight
-            verticalAlignment: Text.AlignVCenter
+            anchors.verticalCenter: parent.verticalCenter
         }
 
-        Item { Layout.fillWidth: true }
-
+        // download action
         ToolButton {
-            icon.name: "download"
-            Layout.alignment: Qt.AlignVCenter
+            icon.name: "file_download"
+            icon.color: Material.onSurface
+            anchors.verticalCenter: parent.verticalCenter
             onClicked: downloadRequested()
         }
+
+        // share action
         ToolButton {
             icon.name: "share"
-            Layout.alignment: Qt.AlignVCenter
+            icon.color: Material.color(Material.DeepPurple, Material.Shade800)
+            anchors.verticalCenter: parent.verticalCenter
             onClicked: shareRequested()
         }
+
+        // overflow menu
         ToolButton {
-            text: "\u22EE"
-            font.pixelSize: 18
-            Layout.alignment: Qt.AlignVCenter
+            icon.name: "more_vert"
+            icon.color: Material.color(Material.DeepPurple, Material.Shade800)
+            anchors.verticalCenter: parent.verticalCenter
             onClicked: menuRequested()
         }
     }
@@ -87,5 +134,6 @@ Item {
         id: hoverArea
         anchors.fill: parent
         hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
     }
 }

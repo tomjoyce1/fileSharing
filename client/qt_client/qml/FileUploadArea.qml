@@ -17,9 +17,7 @@ Item {
     Rectangle {
         id: frame
         anchors.fill: parent
-        color: Material.color(Material.DeepPurple, Material.Shade100)
-        border.color: "white"
-        border.width: 1
+        color: Material.color(Material.DeepPurple, Material.Shade50)
         radius: 8
 
         DropArea {
@@ -63,6 +61,7 @@ Item {
                background: Rectangle { color: "transparent" }
                font.pixelSize: 16
                Layout.alignment: Qt.AlignHCenter
+               Component.onCompleted: __behavior.cursorShape = Qt.PointingHandCursor
 
             }
 
@@ -91,6 +90,7 @@ Item {
                         color: Material.accent
                     }
                     onClicked: uploadRequested(root.lastFiles)
+                    Component.onCompleted: __behavior.cursorShape = Qt.PointingHandCursor
                 }
 
 
@@ -109,6 +109,7 @@ Item {
                         color: Material.surface
                     }
                     onClicked: cancelRequested()
+                    Component.onCompleted: __behavior.cursorShape = Qt.PointingHandCursor
                 }
             }
 
