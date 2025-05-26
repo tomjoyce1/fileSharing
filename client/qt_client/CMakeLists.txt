@@ -33,6 +33,9 @@ qt6_add_resources(qt_client
         qml/FileRow.qml
         qml/FileTable.qml
         qml/FileUploadArea.qml
+        qml/NavButton.qml
+        qml/AppTopBar.qml
+        resources/fonts/MaterialIcons-Regular.ttf
 )
 
 qt6_import_plugins(qt_client)
