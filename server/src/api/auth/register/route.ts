@@ -1,43 +1,29 @@
 import { z } from "zod";
-import { Username, HexString, Base64String } from "~/utils/schema";
+import { Username, KeyBundlePublic } from "~/utils/schema";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { usersTable } from "~/db/schema";
-import { base64ToBuffer } from "~/utils/common";
 import { ok, err, ResultAsync, fromPromise } from "neverthrow";
+import { eq } from "drizzle-orm";
 
 export const schema = {
   post: {
-    body: z.object({
-      username: Username,
-
-      password_hash: HexString.describe("Password hash, hex encoded").max(256),
-      password_salt: HexString.describe("Password salt, hex encoded").max(64),
-
-      user_public_key: Base64String.describe(
-        "User's Kyber public key, base64 encoded"
-      ).max(2048),
-
-      client_sk_protection_salt: HexString.describe(
-        "Salt for client-side SK protection, hex encoded"
-      ).max(64),
-    }),
+    body: z
+      .object({
+        username: Username,
+        key_bundle: KeyBundlePublic,
+      })
+      .strict(),
   },
 };
 
 async function registerUser(
   username: string,
-  password_hash: string,
-  password_salt: string,
-  user_public_key: Buffer,
-  client_sk_protection_salt: string
+  key_bundle: z.infer<typeof KeyBundlePublic>
 ): Promise<ResultAsync<void, Error>> {
   const insertData = {
     username,
-    password_hash,
-    password_salt,
-    user_public_key,
-    client_sk_protection_salt,
+    public_key_bundle: Buffer.from(JSON.stringify(key_bundle)),
   };
   const result = await fromPromise(
     db.insert(usersTable).values(insertData),
@@ -58,42 +44,27 @@ export async function POST(
   if (!req.validated?.body) {
     return Response.json(
       {
-        message: "Internal Server Error",
+        message: "Internal Server Error wtf not valid",
       },
       { status: 500 }
     );
   }
 
-  const {
-    username,
-    password_hash,
-    password_salt,
-    user_public_key,
-    client_sk_protection_salt,
-  } = req.validated.body;
+  const { username, key_bundle } = req.validated.body;
 
-  // attempt to decode the public key
-  let decodedPublicKey;
-  try {
-    decodedPublicKey = base64ToBuffer(user_public_key);
-  } catch (error) {
+  // check if username is already taken
+  const existingUser = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.username, username));
+  if (existingUser.length > 0) {
     return Response.json(
-      {
-        message: "Invalid public key",
-      },
-      {
-        status: 400,
-      }
+      { message: "Username already taken" },
+      { status: 400 }
     );
   }
 
-  const registerResult = await registerUser(
-    username,
-    password_hash,
-    password_salt,
-    decodedPublicKey,
-    client_sk_protection_salt
-  );
+  const registerResult = await registerUser(username, key_bundle);
   if (registerResult.isErr()) {
     return Response.json(
       {

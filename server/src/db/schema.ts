@@ -8,26 +8,12 @@ import {
   index,
 } from "drizzle-orm/sqlite-core";
 
-// -----------------------------------------------------
-// Table `Users`
-// Stores user authentication details and their raw public identity key.
-// -----------------------------------------------------
-export const usersTable = sqliteTable("Users", {
+export const usersTable = sqliteTable("users_table", {
   user_id: integer("user_id").primaryKey({ autoIncrement: true }),
   username: text("username").notNull().unique(),
 
-  password_hash: text("password_hash").notNull(),
-  password_salt: text("password_salt").notNull(),
-
-  // The user's raw public identity key (CRYSTALS-Kyber public key).
-  // Stored as raw bytes. Drizzle handles this as Uint8Array with Bun's SQLite.
-  user_public_key: blob("user_public_key", { mode: "buffer" }).notNull(),
-
-  // Salt used with Argon2id (client-side) to derive the key that encrypts
-  // the user's actual Kyber private key (which is stored only client-side).
-  client_sk_protection_salt: text("client_sk_protection_salt")
-    .notNull()
-    .unique(),
+  // key bundle
+  public_key_bundle: blob("public_key_bundle", { mode: "buffer" }).notNull(),
 
   created_at: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -38,12 +24,8 @@ export const usersTable = sqliteTable("Users", {
     .$onUpdate(() => sql`(strftime('%s', 'now'))`),
 });
 
-// -----------------------------------------------------
-// Table `Files`
-// Stores metadata about each encrypted file.
-// -----------------------------------------------------
 export const filesTable = sqliteTable(
-  "Files",
+  "files_table",
   {
     file_id: integer("file_id").primaryKey({ autoIncrement: true }),
     owner_user_id: integer("owner_user_id")
@@ -53,14 +35,19 @@ export const filesTable = sqliteTable(
         onUpdate: "cascade",
       }),
     storage_path: text("storage_path").notNull().unique(),
-    encrypted_original_filename: blob("encrypted_original_filename", {
+
+    metadata_payload: blob("metadata_payload", { mode: "buffer" }).notNull(),
+    metadata_payload_nonce: blob("metadata_payload_nonce", {
       mode: "buffer",
     }).notNull(),
-    filename_encryption_iv: text("filename_encryption_iv").notNull(),
-    file_content_auth_tag: blob("file_content_auth_tag", {
+
+    pre_quantum_signature: blob("pre_quantum_signature", {
       mode: "buffer",
     }).notNull(),
-    file_size_bytes: integer("file_size_bytes").notNull(),
+    post_quantum_signature: blob("post_quantum_signature", {
+      mode: "buffer",
+    }).notNull(),
+
     upload_timestamp: integer("upload_timestamp", { mode: "timestamp" })
       .notNull()
       .default(sql`(strftime('%s', 'now'))`),
@@ -70,20 +57,23 @@ export const filesTable = sqliteTable(
   })
 );
 
-// -----------------------------------------------------
-// Table `User_File_Access`
-// Manages which user has access to which file and the encrypted DEK for that access.
-// -----------------------------------------------------
-export const userFileAccessTable = sqliteTable(
-  "User_File_Access",
+export const sharedAccessTable = sqliteTable(
+  "shared_access_table",
   {
     access_id: integer("access_id").primaryKey({ autoIncrement: true }),
-    user_id: integer("user_id")
+    owner_user_id: integer("owner_user_id")
       .notNull()
       .references(() => usersTable.user_id, {
         onDelete: "cascade",
         onUpdate: "cascade",
       }),
+    shared_with_user_id: integer("shared_with_user_id").references(
+      () => usersTable.user_id,
+      {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }
+    ),
     file_id: integer("file_id")
       .notNull()
       .references(() => filesTable.file_id, {
@@ -91,31 +81,38 @@ export const userFileAccessTable = sqliteTable(
         onUpdate: "cascade",
       }),
 
-    kyber_encapsulated_key: blob("kyber_encapsulated_key", {
+    pre_quantum_secret_part: blob("pre_quantum_secret_part", {
       mode: "buffer",
-    }).notNull(), // 'C' from Kyber.Encaps
-    encrypted_dek_with_shared_secret: blob("encrypted_dek_with_shared_secret", {
+    }).notNull(),
+    post_quantum_secret_part: blob("post_quantum_secret_part", {
       mode: "buffer",
-    }).notNull(), // DEK encrypted by SharedSecret 'SS'
-    dek_encryption_iv: text("dek_encryption_iv").notNull(),
+    }).notNull(),
 
-    shared_by_user_id: integer("shared_by_user_id").references(
-      () => usersTable.user_id,
-      { onDelete: "set null", onUpdate: "cascade" }
-    ),
+    encrypted_fek: blob("encrypted_fek", { mode: "buffer" }).notNull(),
+    encrypted_fek_nonce: blob("encrypted_fek_nonce", {
+      mode: "buffer",
+    }).notNull(),
 
-    access_granted_at: integer("access_granted_at", { mode: "timestamp" })
+    pre_quantum_signature: blob("pre_quantum_signature", {
+      mode: "buffer",
+    }).notNull(),
+    post_quantum_signature: blob("post_quantum_signature", {
+      mode: "buffer",
+    }).notNull(),
+
+    shared_at: integer("shared_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(strftime('%s', 'now'))`),
   },
   (table) => ({
     uqUserFileAccess: uniqueIndex("uq_user_file_access_idx").on(
-      table.user_id,
+      table.owner_user_id,
+      table.shared_with_user_id,
       table.file_id
     ),
 
-    userIdx: index("fk_UFA_Users_idx").on(table.user_id),
     fileIdx: index("fk_UFA_Files_idx").on(table.file_id),
-    sharedByIdx: index("fk_UFA_SharedBy_idx").on(table.shared_by_user_id),
+    sharerIdx: index("fk_UFA_Sharer_idx").on(table.owner_user_id),
+    shareeIdx: index("fk_UFA_Sharee_idx").on(table.shared_with_user_id),
   })
 );

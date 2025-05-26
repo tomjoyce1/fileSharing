@@ -1,11 +1,11 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a05fc8e2-6e81-449e-a287-8266c0796f8d",
+  "id": "41b86195-fd9b-49c2-add0-71fbd2ecb953",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "Files": {
-      "name": "Files",
+    "files_table": {
+      "name": "files_table",
       "columns": {
         "file_id": {
           "name": "file_id",
@@ -28,30 +28,30 @@
           "notNull": true,
           "autoincrement": false
         },
-        "encrypted_original_filename": {
-          "name": "encrypted_original_filename",
+        "metadata_payload": {
+          "name": "metadata_payload",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "filename_encryption_iv": {
-          "name": "filename_encryption_iv",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "file_content_auth_tag": {
-          "name": "file_content_auth_tag",
+        "metadata_payload_nonce": {
+          "name": "metadata_payload_nonce",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "file_size_bytes": {
-          "name": "file_size_bytes",
-          "type": "integer",
+        "pre_quantum_signature": {
+          "name": "pre_quantum_signature",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "post_quantum_signature": {
+          "name": "post_quantum_signature",
+          "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -66,8 +66,8 @@
         }
       },
       "indexes": {
-        "Files_storage_path_unique": {
-          "name": "Files_storage_path_unique",
+        "files_table_storage_path_unique": {
+          "name": "files_table_storage_path_unique",
           "columns": [
             "storage_path"
           ],
@@ -82,10 +82,10 @@
         }
       },
       "foreignKeys": {
-        "Files_owner_user_id_Users_user_id_fk": {
-          "name": "Files_owner_user_id_Users_user_id_fk",
-          "tableFrom": "Files",
-          "tableTo": "Users",
+        "files_table_owner_user_id_users_table_user_id_fk": {
+          "name": "files_table_owner_user_id_users_table_user_id_fk",
+          "tableFrom": "files_table",
+          "tableTo": "users_table",
           "columnsFrom": [
             "owner_user_id"
           ],
@@ -100,8 +100,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "User_File_Access": {
-      "name": "User_File_Access",
+    "shared_access_table": {
+      "name": "shared_access_table",
       "columns": {
         "access_id": {
           "name": "access_id",
@@ -110,11 +110,18 @@
           "notNull": true,
           "autoincrement": true
         },
-        "user_id": {
-          "name": "user_id",
+        "owner_user_id": {
+          "name": "owner_user_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "shared_with_user_id": {
+          "name": "shared_with_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "file_id": {
@@ -124,36 +131,50 @@
           "notNull": true,
           "autoincrement": false
         },
-        "kyber_encapsulated_key": {
-          "name": "kyber_encapsulated_key",
+        "pre_quantum_secret_part": {
+          "name": "pre_quantum_secret_part",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "encrypted_dek_with_shared_secret": {
-          "name": "encrypted_dek_with_shared_secret",
+        "post_quantum_secret_part": {
+          "name": "post_quantum_secret_part",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "dek_encryption_iv": {
-          "name": "dek_encryption_iv",
-          "type": "text",
+        "encrypted_fek": {
+          "name": "encrypted_fek",
+          "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "shared_by_user_id": {
-          "name": "shared_by_user_id",
-          "type": "integer",
+        "encrypted_fek_nonce": {
+          "name": "encrypted_fek_nonce",
+          "type": "blob",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
-        "access_granted_at": {
-          "name": "access_granted_at",
+        "pre_quantum_signature": {
+          "name": "pre_quantum_signature",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "post_quantum_signature": {
+          "name": "post_quantum_signature",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shared_at": {
+          "name": "shared_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -165,17 +186,11 @@
         "uq_user_file_access_idx": {
           "name": "uq_user_file_access_idx",
           "columns": [
-            "user_id",
+            "owner_user_id",
+            "shared_with_user_id",
             "file_id"
           ],
           "isUnique": true
-        },
-        "fk_UFA_Users_idx": {
-          "name": "fk_UFA_Users_idx",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
         },
         "fk_UFA_Files_idx": {
           "name": "fk_UFA_Files_idx",
@@ -184,21 +199,28 @@
           ],
           "isUnique": false
         },
-        "fk_UFA_SharedBy_idx": {
-          "name": "fk_UFA_SharedBy_idx",
+        "fk_UFA_Sharer_idx": {
+          "name": "fk_UFA_Sharer_idx",
           "columns": [
-            "shared_by_user_id"
+            "owner_user_id"
+          ],
+          "isUnique": false
+        },
+        "fk_UFA_Sharee_idx": {
+          "name": "fk_UFA_Sharee_idx",
+          "columns": [
+            "shared_with_user_id"
           ],
           "isUnique": false
         }
       },
       "foreignKeys": {
-        "User_File_Access_user_id_Users_user_id_fk": {
-          "name": "User_File_Access_user_id_Users_user_id_fk",
-          "tableFrom": "User_File_Access",
-          "tableTo": "Users",
+        "shared_access_table_owner_user_id_users_table_user_id_fk": {
+          "name": "shared_access_table_owner_user_id_users_table_user_id_fk",
+          "tableFrom": "shared_access_table",
+          "tableTo": "users_table",
           "columnsFrom": [
-            "user_id"
+            "owner_user_id"
           ],
           "columnsTo": [
             "user_id"
@@ -206,10 +228,23 @@
           "onDelete": "cascade",
           "onUpdate": "cascade"
         },
-        "User_File_Access_file_id_Files_file_id_fk": {
-          "name": "User_File_Access_file_id_Files_file_id_fk",
-          "tableFrom": "User_File_Access",
-          "tableTo": "Files",
+        "shared_access_table_shared_with_user_id_users_table_user_id_fk": {
+          "name": "shared_access_table_shared_with_user_id_users_table_user_id_fk",
+          "tableFrom": "shared_access_table",
+          "tableTo": "users_table",
+          "columnsFrom": [
+            "shared_with_user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        },
+        "shared_access_table_file_id_files_table_file_id_fk": {
+          "name": "shared_access_table_file_id_files_table_file_id_fk",
+          "tableFrom": "shared_access_table",
+          "tableTo": "files_table",
           "columnsFrom": [
             "file_id"
           ],
@@ -217,19 +252,6 @@
             "file_id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "cascade"
-        },
-        "User_File_Access_shared_by_user_id_Users_user_id_fk": {
-          "name": "User_File_Access_shared_by_user_id_Users_user_id_fk",
-          "tableFrom": "User_File_Access",
-          "tableTo": "Users",
-          "columnsFrom": [
-            "shared_by_user_id"
-          ],
-          "columnsTo": [
-            "user_id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "cascade"
         }
       },
@@ -237,8 +259,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "Users": {
-      "name": "Users",
+    "users_table": {
+      "name": "users_table",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -254,30 +276,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "password_auth_verifier": {
-          "name": "password_auth_verifier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "password_auth_salt": {
-          "name": "password_auth_salt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "user_public_key": {
-          "name": "user_public_key",
+        "public_key_bundle": {
+          "name": "public_key_bundle",
           "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "client_sk_protection_salt": {
-          "name": "client_sk_protection_salt",
-          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -300,17 +301,10 @@
         }
       },
       "indexes": {
-        "Users_username_unique": {
-          "name": "Users_username_unique",
+        "users_table_username_unique": {
+          "name": "users_table_username_unique",
           "columns": [
             "username"
-          ],
-          "isUnique": true
-        },
-        "Users_client_sk_protection_salt_unique": {
-          "name": "Users_client_sk_protection_salt_unique",
-          "columns": [
-            "client_sk_protection_salt"
           ],
           "isUnique": true
         }
