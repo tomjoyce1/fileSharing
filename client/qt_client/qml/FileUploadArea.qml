@@ -1,16 +1,20 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
 Rectangle {
     id: uploadArea
+    property var appwin
+
     width: parent.width
     height: 140
     radius: 8
     border.width: 1
-    border.color: Material.divider
-    color: dropArea.containsDrag ? Material.accent.lighter(1.7) : Material.background
+    border.color: appwin ? appwin.Material.divider : "gray"
+    color: dropArea.containsDrag
+        ? (appwin ? appwin.Material.accent.lighter(1.7) : "#2196f3")
+        : (appwin ? appwin.Material.background : "white")
 
     signal filesDropped(var fileUrls)
     signal uploadRequested(var fileUrls)

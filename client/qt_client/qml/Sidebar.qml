@@ -1,14 +1,17 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
 
 Rectangle {
     id: root
+    property var appwin
+
     width: 220
-    color: Material.surface
-    border.color: Material.divider
+    color: appwin ? appwin.Material.surface : "white"
+
+    border.color: appwin ? appwin.Material.divider : "gray"
     border.width: 1
 
     ColumnLayout {
@@ -38,6 +41,7 @@ Rectangle {
         }
 
         FileUploadArea {
+            appwin: root.appwin
             onFilesDropped:   console.log("dropped:", fileUrls)
             onUploadRequested: console.log("upload:", fileUrls)
         }

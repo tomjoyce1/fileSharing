@@ -1,6 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
 
@@ -8,12 +8,25 @@ ApplicationWindow {
     id: appWin
     width: 960
     height: 540
+    property bool loggedIn: false
     visible: true
     title: qsTr("Gobbler — main")
     Material.theme: Material.Light
     Material.accent: Material.Blue
 
-    // –– 1) A demo ListModel full of “realistic” placeholders ––
+
+    StackLayout{
+    //     page 1
+        anchors.fill:parent
+        currentIndex: loggedIn ? 1 : 0
+
+        Login{
+
+
+        }
+
+
+    // –– page 2) A demo ListModel full of “realistic” placeholders ––
     ListModel {
         id: demoFiles
         ListElement { name: "Contract.pdf";      size: "248 KB";  modified: "Apr 01 2025"; sharedTo: "3 users" }
@@ -31,6 +44,8 @@ ApplicationWindow {
         spacing: 0
 
         Sidebar {
+            appwin:appWin
+
             Layout.preferredWidth: 220
             Layout.fillHeight: true
         }
@@ -42,5 +57,6 @@ ApplicationWindow {
             // –– 2) wire up the demo model here ––
             model: demoFiles
         }
+    }
     }
 }
