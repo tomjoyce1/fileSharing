@@ -28,6 +28,43 @@ type Props = {
   getFileIcon: (fileType: string) => React.ReactNode;
 };
 
+const handleShare = (item) => {
+  alert(`Share "${item.name}" with username X.`);
+};
+
+const handleRename = (item) => {
+  const newName = prompt("Enter new name", item.name);
+
+  if (newName && newName != item.name) {
+    item.name = newName;
+  }
+};
+
+const handleDelete = (item) => {
+  alert(`Deleted "${item.name}"`);
+};
+
+const handleDownload = async (item) => {
+  try {
+    // Fetch the file as a blob
+    const response = await fetch(item.url);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const blob = await response.blob();
+
+    // Create a temporary URL and anchor to trigger download
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = item.name; // Suggests the original file name
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url); // Clean up
+  } catch (error) {
+    alert("Failed to download file: " + error.message);
+  }
+};
+
 export default function DriveList({
   items,
   onFolderClick,
@@ -99,21 +136,18 @@ export default function DriveList({
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
+
                   <DropdownMenuContent
                     align="end"
                     className="border-gray-700 bg-gray-800"
                   >
                     {item.type === "file" && (
-                      <DropdownMenuItem className="text-white" asChild>
-                        <a
-                          href={(item as FileItem).url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center"
-                        >
-                          <Download className="mr-2 h-4 w-4" />
-                          Download
-                        </a>
+                      <DropdownMenuItem
+                        className="text-white"
+                        onClick={() => handleDownload(item)}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem className="text-white">
