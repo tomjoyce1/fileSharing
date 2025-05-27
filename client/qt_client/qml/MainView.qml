@@ -1,12 +1,13 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
 ApplicationWindow {
     id: appWin
     width: 960
     height: 540
+    property bool loggedIn: false
     visible: true
     title: qsTr("Gobbler — main")
 
@@ -21,6 +22,8 @@ ApplicationWindow {
 
         // — Sidebar —
         Sidebar {
+            appwin:appWin
+
             Layout.preferredWidth: 220
             Layout.fillHeight: true
         }
@@ -74,5 +77,6 @@ ApplicationWindow {
                 }
             }
         }
+    }
     }
 }
