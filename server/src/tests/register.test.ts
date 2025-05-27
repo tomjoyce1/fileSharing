@@ -8,14 +8,14 @@ import { setupTestDb, teardownTestDb, testDb } from "./setup";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 
-// Mock the database module to use our test database
-mock.module("~/db", () => ({
-  db: testDb,
-}));
-
 describe("Register API", () => {
   beforeAll(async () => {
     await setupTestDb();
+
+    // Mock the database module to use our test database
+    mock.module("~/db", () => ({
+      db: testDb,
+    }));
   });
 
   afterAll(async () => {

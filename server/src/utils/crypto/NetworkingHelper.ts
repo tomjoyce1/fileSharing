@@ -1,10 +1,101 @@
 import { sign as nodeSign } from "node:crypto";
-import { ml_dsa65 } from "@noble/post-quantum/ml-dsa";
+import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import type { KeyBundlePrivate, KeyBundlePublic } from "../schema";
+import { ok, err, Result } from "neverthrow";
+import { db } from "~/db";
+import { usersTable } from "~/db/schema";
+import { eq } from "drizzle-orm";
+import { deserializeKeyBundlePublic } from "./KeyHelper";
 
 const DEFAULT_BASE_URL = "http://localhost:3000";
 const REPLAY_ATTACK_WINDOW_MS = 60 * 1000;
 const SIGNATURE_DELIMITER = "||";
+
+type User = typeof usersTable.$inferSelect;
+
+function createCanonicalRequestString(
+  username: string,
+  timestamp: string,
+  method: string,
+  path: string,
+  body: string
+): string {
+  return `${username}|${timestamp}|${method}|${path}|${body}`;
+}
+
+function createSignatures(
+  canonicalString: string,
+  privateBundle: KeyBundlePrivate
+): { preQuantum: string; postQuantum: string } {
+  const preQuantumSignature = nodeSign(
+    null,
+    Buffer.from(canonicalString),
+    privateBundle.preQuantum.identitySigning.privateKey
+  ).toString("base64");
+
+  const postQuantumSignature = Buffer.from(
+    ml_dsa87.sign(
+      privateBundle.postQuantum.identitySigning.privateKey,
+      Buffer.from(canonicalString)
+    )
+  ).toString("base64");
+
+  return { preQuantum: preQuantumSignature, postQuantum: postQuantumSignature };
+}
+
+function parseSignatures(
+  signature: string
+): { preQuantum: string; postQuantum: string } | null {
+  const [preQuantum, postQuantum] = signature.split(SIGNATURE_DELIMITER);
+  return preQuantum && postQuantum ? { preQuantum, postQuantum } : null;
+}
+
+function isWithinReplayWindow(timestamp: string): boolean {
+  const requestTime = new Date(timestamp);
+  const now = new Date();
+  const timeDiff = Math.abs(now.getTime() - requestTime.getTime());
+  return timeDiff <= REPLAY_ATTACK_WINDOW_MS;
+}
+
+async function verifySignatures(
+  canonicalString: string,
+  signatures: { preQuantum: string; postQuantum: string },
+  publicBundle: KeyBundlePublic
+): Promise<boolean> {
+  try {
+    const { verify } = await import("node:crypto");
+
+    const preQuantumValid = verify(
+      null,
+      Buffer.from(canonicalString),
+      publicBundle.preQuantum.identitySigningPublicKey,
+      Buffer.from(signatures.preQuantum, "base64")
+    );
+
+    const postQuantumValid = ml_dsa87.verify(
+      publicBundle.postQuantum.identitySigningPublicKey,
+      Buffer.from(canonicalString),
+      Buffer.from(signatures.postQuantum, "base64")
+    );
+
+    return preQuantumValid && postQuantumValid;
+  } catch {
+    return false;
+  }
+}
+
+function createRequestHeaders(
+  username: string,
+  timestamp: string,
+  combinedSignature: string
+): Headers {
+  return new Headers({
+    "Content-Type": "application/json",
+    "X-Username": username,
+    "X-Timestamp": timestamp,
+    "X-Signature": combinedSignature,
+  });
+}
 
 async function _createSignedRequest(options: {
   method: string;
@@ -25,29 +116,18 @@ async function _createSignedRequest(options: {
 
   const url = new URL(path, baseUrl).toString();
   const timestamp = new Date().toISOString();
-  const canonicalRequestString = `${username}|${timestamp}|${method}|${url}|${body}`;
 
-  const preQuantumSignature = nodeSign(
-    null,
-    Buffer.from(canonicalRequestString),
-    privateBundle.preQuantum.identitySigning.privateKey
-  ).toString("base64");
+  const canonicalString = createCanonicalRequestString(
+    username,
+    timestamp,
+    method,
+    path,
+    body
+  );
 
-  const postQuantumSignature = Buffer.from(
-    ml_dsa65.sign(
-      Buffer.from(canonicalRequestString),
-      privateBundle.postQuantum.identitySigning.privateKey
-    )
-  ).toString("base64");
-
-  const combinedSignature = `${preQuantumSignature}${SIGNATURE_DELIMITER}${postQuantumSignature}`;
-
-  const headers = new Headers({
-    "Content-Type": "application/json",
-    "X-Username": username,
-    "X-Timestamp": timestamp,
-    "X-Signature": combinedSignature,
-  });
+  const signatures = createSignatures(canonicalString, privateBundle);
+  const combinedSignature = `${signatures.preQuantum}${SIGNATURE_DELIMITER}${signatures.postQuantum}`;
+  const headers = createRequestHeaders(username, timestamp, combinedSignature);
 
   return new Request(url, {
     method,
@@ -65,6 +145,7 @@ export async function createSignedPOST(
 ): Promise<Response> {
   const bodyString =
     typeof requestBody === "string" ? requestBody : JSON.stringify(requestBody);
+
   const signedRequest = await _createSignedRequest({
     method: "POST",
     path,
@@ -100,9 +181,10 @@ export async function createSignedGET(
   return fetch(signedRequest);
 }
 
-export async function verifyRequestSignature(
+async function verifyRequestSignature(
   request: Request,
-  publicBundle: KeyBundlePublic
+  publicBundle: KeyBundlePublic,
+  providedBody?: string
 ): Promise<string | null> {
   const username = request.headers.get("X-Username");
   const timestamp = request.headers.get("X-Timestamp");
@@ -112,43 +194,81 @@ export async function verifyRequestSignature(
     return null;
   }
 
-  const requestTime = new Date(timestamp);
-  const now = new Date();
-  const timeDiff = Math.abs(now.getTime() - requestTime.getTime());
-
-  if (timeDiff > REPLAY_ATTACK_WINDOW_MS) {
+  if (!isWithinReplayWindow(timestamp)) {
     return null;
   }
 
-  const clonedRequest = request.clone();
-  const requestBody = await clonedRequest.text();
-
-  const canonicalRequestString = `${username}|${timestamp}|${request.method}|${request.url}|${requestBody}`;
-
-  const [preQuantumSignature, postQuantumSignature] =
-    signature.split(SIGNATURE_DELIMITER);
-
-  if (!preQuantumSignature || !postQuantumSignature) {
+  const signatures = parseSignatures(signature);
+  if (!signatures) {
     return null;
+  }
+
+  // use provided body or read from request
+  const requestBody =
+    providedBody !== undefined ? providedBody : await request.clone().text();
+
+  // extract just the path from the full URL to match signature creation
+  const requestUrl = new URL(request.url);
+  const requestPath = requestUrl.pathname;
+
+  const canonicalString = createCanonicalRequestString(
+    username,
+    timestamp,
+    request.method,
+    requestPath,
+    requestBody
+  );
+
+  const isValid = await verifySignatures(
+    canonicalString,
+    signatures,
+    publicBundle
+  );
+  return isValid ? username : null;
+}
+
+export async function getAuthenticatedUserFromRequest(
+  req: Request,
+  body?: string
+): Promise<Result<User, string>> {
+  const username = req.headers.get("X-Username");
+  if (!username) {
+    return err("Missing username header");
   }
 
   try {
-    const { verify } = await import("node:crypto");
-    const preQuantumValid = verify(
-      null,
-      Buffer.from(canonicalRequestString),
-      publicBundle.preQuantum.identitySigningPublicKey,
-      Buffer.from(preQuantumSignature, "base64")
+    // get user from database
+    const user = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.username, username))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (!user) {
+      return err("User not found");
+    }
+
+    // verify request signature
+    const userPublicBundle = deserializeKeyBundlePublic(
+      JSON.parse(user.public_key_bundle.toString())
     );
 
-    const postQuantumValid = ml_dsa65.verify(
-      Buffer.from(postQuantumSignature, "base64"),
-      Buffer.from(canonicalRequestString),
-      publicBundle.postQuantum.identitySigningPublicKey
+    // use provided body or read from request
+    const requestBody = body !== undefined ? body : await req.clone().text();
+
+    const authenticatedUsername = await verifyRequestSignature(
+      req,
+      userPublicBundle,
+      requestBody
     );
 
-    return preQuantumValid && postQuantumValid ? username : null;
-  } catch (error) {
-    return null;
+    if (!authenticatedUsername || authenticatedUsername !== username) {
+      return err("Invalid signature");
+    }
+
+    return ok(user);
+  } catch {
+    return err("Authentication failed");
   }
 }

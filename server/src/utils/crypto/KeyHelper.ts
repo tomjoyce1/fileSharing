@@ -4,8 +4,8 @@ import {
   createPrivateKey,
   createPublicKey,
 } from "node:crypto";
-import { ml_kem768 } from "@noble/post-quantum/ml-kem";
-import { ml_dsa65 } from "@noble/post-quantum/ml-dsa";
+import { ml_kem1024 } from "@noble/post-quantum/ml-kem";
+import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import type {
   KeyBundlePrivate,
   KeyBundlePublic,
@@ -30,11 +30,11 @@ export function generateKeyBundle(): {
     privateKeyEncoding: { type: "pkcs8", format: "der" },
   });
 
-  // Generate post-quantum Kyber768 key pair for KEM
-  const kyberKeyPair = ml_kem768.keygen();
+  // Generate post-quantum Kyber1024 key pair for KEM
+  const kyberKeyPair = ml_kem1024.keygen();
 
-  // Generate post-quantum Dilithium65 key pair for signing
-  const dilithiumKeyPair = ml_dsa65.keygen(new Uint8Array(randomBytes(32)));
+  // Generate post-quantum Dilithium87 key pair for signing
+  const dilithiumKeyPair = ml_dsa87.keygen(new Uint8Array(randomBytes(32)));
 
   // Convert buffer keys to KeyObjects for consistency
   const x25519PublicKey = createPublicKey({
