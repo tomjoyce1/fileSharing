@@ -1,5 +1,8 @@
 import { expect, test, describe, beforeAll, afterAll, mock } from "bun:test";
-import { generateKeyBundle } from "~/utils/crypto/KeyHelper";
+import {
+  generateKeyBundle,
+  serializeKeyBundlePublic,
+} from "~/utils/crypto/KeyHelper";
 import { POST } from "~/api/auth/register/route";
 import { setupTestDb, teardownTestDb, testDb } from "./setup";
 import { usersTable } from "~/db/schema";
@@ -22,12 +25,13 @@ describe("Register API", () => {
   test("register user works", async () => {
     const username = "testuser";
     const keyBundle = generateKeyBundle();
+    const serializedPublicBundle = serializeKeyBundlePublic(keyBundle.public);
 
     const mockRequest = {
       validated: {
         body: {
           username,
-          key_bundle: keyBundle.public,
+          key_bundle: serializedPublicBundle,
         },
       },
     };
@@ -47,18 +51,19 @@ describe("Register API", () => {
     expect(insertedUser).toHaveLength(1);
     expect(insertedUser[0]?.username).toBe(username);
     expect(insertedUser[0]?.public_key_bundle).toEqual(
-      Buffer.from(JSON.stringify(keyBundle.public))
+      Buffer.from(JSON.stringify(serializedPublicBundle))
     );
   });
 
   test("register user with duplicate username fails", async () => {
     const username = "duplicateuser";
     const keyBundle = generateKeyBundle();
+    const serializedPublicBundle = serializeKeyBundlePublic(keyBundle.public);
 
     // add user to db
     await testDb.insert(usersTable).values({
       username,
-      public_key_bundle: Buffer.from(JSON.stringify(keyBundle.public)),
+      public_key_bundle: Buffer.from(JSON.stringify(serializedPublicBundle)),
     });
 
     // try to register the same username again
@@ -66,7 +71,7 @@ describe("Register API", () => {
       validated: {
         body: {
           username,
-          key_bundle: keyBundle.public,
+          key_bundle: serializedPublicBundle,
         },
       },
     };

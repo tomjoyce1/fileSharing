@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { KeyObject } from "node:crypto";
 
 export const Username = z
   .string()
@@ -20,32 +21,68 @@ export const Base64String = z
     "Must be a Base64 string"
   );
 
-export const KeyBundlePrivate = z
+// Native runtime types (use actual KeyObject and Uint8Array)
+export interface KeyBundlePrivate {
+  preQuantum: {
+    identityKem: {
+      publicKey: KeyObject;
+      privateKey: KeyObject;
+    };
+    identitySigning: {
+      publicKey: KeyObject;
+      privateKey: KeyObject;
+    };
+  };
+  postQuantum: {
+    identityKem: {
+      publicKey: Uint8Array;
+      privateKey: Uint8Array;
+    };
+    identitySigning: {
+      publicKey: Uint8Array;
+      privateKey: Uint8Array;
+    };
+  };
+}
+
+export interface KeyBundlePublic {
+  preQuantum: {
+    identityKemPublicKey: KeyObject;
+    identitySigningPublicKey: KeyObject;
+  };
+  postQuantum: {
+    identityKemPublicKey: Uint8Array;
+    identitySigningPublicKey: Uint8Array;
+  };
+}
+
+// Serializable versions for API/database (base64 strings)
+export const KeyBundlePrivateSerializable = z
   .object({
     preQuantum: z.object({
       identityKem: z.object({
-        publicKey: z.string(), // X25519 public key
-        privateKey: z.string(), // X25519 private key
+        publicKey: z.string(), // X25519 public key (base64)
+        privateKey: z.string(), // X25519 private key (base64)
       }),
       identitySigning: z.object({
-        publicKey: z.string(), // Ed25519 public key
-        privateKey: z.string(), // Ed25519 private key
+        publicKey: z.string(), // Ed25519 public key (base64)
+        privateKey: z.string(), // Ed25519 private key (base64)
       }),
     }),
     postQuantum: z.object({
       identityKem: z.object({
-        publicKey: z.string(), // Kyber public key
-        privateKey: z.string(), // Kyber private key
+        publicKey: z.string(), // Kyber public key (base64)
+        privateKey: z.string(), // Kyber private key (base64)
       }),
       identitySigning: z.object({
-        publicKey: z.string(), // Dilithium public key
-        privateKey: z.string(), // Dilithium private key
+        publicKey: z.string(), // Dilithium public key (base64)
+        privateKey: z.string(), // Dilithium private key (base64)
       }),
     }),
   })
   .strict();
 
-export const KeyBundlePublic = z
+export const KeyBundlePublicSerializable = z
   .object({
     preQuantum: z.object({
       identityKemPublicKey: z.string(),

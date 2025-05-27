@@ -11,7 +11,7 @@ export const testDb = drizzle(client);
 
 export async function setupTestDb() {
   await migrate(testDb, {
-    migrationsFolder: join(process.cwd(), "server/drizzle"),
+    migrationsFolder: join(process.cwd(), "drizzle"),
   });
 }
 

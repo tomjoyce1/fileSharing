@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Username, KeyBundlePublic } from "~/utils/schema";
+import { Username, KeyBundlePublicSerializable } from "~/utils/schema";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { usersTable } from "~/db/schema";
@@ -11,7 +11,7 @@ export const schema = {
     body: z
       .object({
         username: Username,
-        key_bundle: KeyBundlePublic,
+        key_bundle: KeyBundlePublicSerializable,
       })
       .strict(),
   },
@@ -19,7 +19,7 @@ export const schema = {
 
 async function registerUser(
   username: string,
-  key_bundle: z.infer<typeof KeyBundlePublic>
+  key_bundle: z.infer<typeof KeyBundlePublicSerializable>
 ): Promise<ResultAsync<void, Error>> {
   const insertData = {
     username,
