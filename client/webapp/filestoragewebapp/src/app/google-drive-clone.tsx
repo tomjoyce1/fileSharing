@@ -125,7 +125,31 @@ export default function GoogleDriveClone() {
     }
   };
 
-  // adding to mockdata since backend server isn't ready
+  // Delete handler for DriveList
+  const handleDelete = (item: DriveItem) => {
+    // Find the current folder
+    const folder = getCurrentFolder();
+    // Remove the item from the children array
+    const index = folder.children.findIndex((child) => child.id === item.id);
+    if (index !== -1) {
+      // If the file is a blob, revoke the object URL to free memory
+      if (item.type === "file" && item.url && item.url.startsWith("blob:")) {
+        URL.revokeObjectURL(item.url);
+      }
+      folder.children.splice(index, 1);
+      forceUpdate({});
+    }
+  };
+
+  // Rename handler for DriveList
+  const handleRename = (item: DriveItem) => {
+    const newName = prompt("Enter new name", item.name);
+    if (newName && newName !== item.name) {
+      item.name = newName;
+      forceUpdate({});
+    }
+    return item;
+  };
 
   // Filter items based on search
   const filteredItems = currentFolder.children.filter((item) =>
@@ -195,6 +219,8 @@ export default function GoogleDriveClone() {
             items={filteredItems}
             onFolderClick={navigateToFolder}
             getFileIcon={getFileIcon}
+            onDelete={handleDelete}
+            onRename={handleRename}
           />
         </div>
       </main>

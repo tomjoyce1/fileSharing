@@ -26,50 +26,52 @@ type Props = {
   items: DriveItem[];
   onFolderClick: (id: string, name: string) => void;
   getFileIcon: (fileType: string) => React.ReactNode;
+  onDelete: (item: DriveItem) => void;
+  onRename: (item: DriveItem) => DriveItem;
 };
 
 const handleShare = (item) => {
   alert(`Share "${item.name}" with username X.`);
 };
 
-const handleRename = (item) => {
-  const newName = prompt("Enter new name", item.name);
-
-  if (newName && newName != item.name) {
-    item.name = newName;
-  }
-};
-
-const handleDelete = (item) => {
-  alert(`Deleted "${item.name}"`);
-};
-
-const handleDownload = async (item) => {
-  try {
-    // Fetch the file as a blob
-    const response = await fetch(item.url);
-    if (!response.ok) throw new Error("Network response was not ok");
-    const blob = await response.blob();
-
-    // Create a temporary URL and anchor to trigger download
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = item.name; // Suggests the original file name
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url); // Clean up
-  } catch (error) {
-    alert("Failed to download file: " + error.message);
-  }
-};
-
 export default function DriveList({
   items,
   onFolderClick,
   getFileIcon,
+  onDelete,
+  onRename,
 }: Props) {
+  const handleDelete = (item) => {
+    if (window.confirm(`Delete "${item.name}"?`)) {
+      onDelete(item);
+    }
+  };
+
+  const handleRename = (item: DriveItem) => {
+    onRename(item);
+  };
+
+  const handleDownload = async (item) => {
+    try {
+      // Fetch the file as a blob
+      const response = await fetch(item.url);
+      if (!response.ok) throw new Error("Network response was not ok");
+      const blob = await response.blob();
+
+      // Create a temporary URL and anchor to trigger download
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = item.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert("Failed to download file: " + error.message);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800">
       {/* List Header */}
@@ -150,19 +152,28 @@ export default function DriveList({
                         Download
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem className="text-white">
+                    <DropdownMenuItem
+                      className="text-white"
+                      onClick={() => handleShare(item)}
+                    >
                       {" "}
                       <Share className="mr-2 h-4 w-4" />
                       Share
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem className="text-white">
+                    <DropdownMenuItem
+                      className="text-white"
+                      onClick={() => handleRename(item)}
+                    >
                       {" "}
                       <FolderPen className="mr-2 h-4 w-4" />
                       Rename
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem className="text-red-400">
+                    <DropdownMenuItem
+                      className="text-red-400"
+                      onClick={() => handleDelete(item)}
+                    >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
                     </DropdownMenuItem>
