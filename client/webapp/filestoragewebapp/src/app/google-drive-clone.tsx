@@ -20,6 +20,8 @@ export default function GoogleDriveClone() {
   const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [, forceUpdate] = useState({});
+
   // Get current folder based on path
   const getCurrentFolder = (): FolderItem => {
     let current: any = mockData.root;
@@ -31,6 +33,43 @@ export default function GoogleDriveClone() {
     }
     return current;
   };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    const reader = new FileReader();
+    if (file) {
+      console.log("Selected", file.name);
+      reader.onload = async (e) => {
+        const arrayBuffer = e.target.result;
+        // encrypt with aesgcm
+        // 2 - do signing
+
+        // create new file objct 3
+
+        const newFile: FileItem = {
+          id: file.name + Date.now(),
+          name: file.name,
+          type: "file",
+          fileType: file.type,
+          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+          modified: "just now",
+          url: "",
+        };
+
+        // adding to mockdata - will change to actual db
+        const folder = getCurrentFolder();
+        folder.children.push(newFile);
+        forceUpdate({});
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  };
+  const handleUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  const currentFolder = getCurrentFolder();
 
   // Navigate to folder
   const navigateToFolder = (folderId: string, folderName: string) => {
@@ -57,6 +96,7 @@ export default function GoogleDriveClone() {
     }
     return names;
   };
+  const breadcrumbNames = getBreadcrumbNames();
 
   // Get file icon
   const getFileIcon = (fileType: string) => {
@@ -75,19 +115,7 @@ export default function GoogleDriveClone() {
     }
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      console.log("Selected", file.name);
-    }
-  };
-  const handleUpload = () => {
-    alert("Upload functionality would be implemented here!");
-    fileInputRef.current?.click();
-  };
-
-  const currentFolder = getCurrentFolder();
-  const breadcrumbNames = getBreadcrumbNames();
+  // adding to mockdata since backend server isn't ready
 
   // Filter items based on search
   const filteredItems = currentFolder.children.filter((item) =>
