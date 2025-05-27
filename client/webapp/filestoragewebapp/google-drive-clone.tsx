@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState, useRef } from "react";
 import {
   ChevronRight,
   Upload,
@@ -12,10 +12,15 @@ import {
   Video,
   Download,
   MoreVertical,
-} from "lucide-react"
-import { Button } from "~/components/ui/button"
-import { Input } from "~/components/ui/input"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "~/components/ui/dropdown-menu"
+} from "lucide-react";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 
 // Mock data structure
 const mockData = {
@@ -126,110 +131,122 @@ const mockData = {
       },
     ],
   },
-}
+};
 
 type FileItem = {
-  id: string
-  name: string
-  type: "file"
-  fileType: "image" | "document" | "audio" | "video" | "pdf"
-  size: string
-  modified: string
-  url: string
-}
+  id: string;
+  name: string;
+  type: "file";
+  fileType: "image" | "document" | "audio" | "video" | "pdf";
+  size: string;
+  modified: string;
+  url: string;
+};
 
 type FolderItem = {
-  id: string
-  name: string
-  type: "folder"
-  children: (FileItem | FolderItem)[]
-}
+  id: string;
+  name: string;
+  type: "folder";
+  children: (FileItem | FolderItem)[];
+};
 
-type DriveItem = FileItem | FolderItem
+type DriveItem = FileItem | FolderItem;
 
 export default function GoogleDriveClone() {
-  const [currentPath, setCurrentPath] = useState<string[]>(["root"])
-  const [searchQuery, setSearchQuery] = useState("")
+  const [currentPath, setCurrentPath] = useState<string[]>(["root"]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Get current folder based on path
   const getCurrentFolder = (): FolderItem => {
-    let current: any = mockData.root
+    let current: any = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
-      const pathSegment = currentPath[i]
-      current = current.children.find((item: DriveItem) => item.id === pathSegment)
+      const pathSegment = currentPath[i];
+      current = current.children.find(
+        (item: DriveItem) => item.id === pathSegment,
+      );
     }
-    return current
-  }
+    return current;
+  };
 
   // Navigate to folder
   const navigateToFolder = (folderId: string, folderName: string) => {
-    setCurrentPath([...currentPath, folderId])
-  }
+    setCurrentPath([...currentPath, folderId]);
+  };
 
   // Navigate via breadcrumb
   const navigateToBreadcrumb = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1))
-  }
+    setCurrentPath(currentPath.slice(0, index + 1));
+  };
 
   // Get breadcrumb names
   const getBreadcrumbNames = (): string[] => {
-    const names = ["My Drive"]
-    let current: any = mockData.root
+    const names = ["My Drive"];
+    let current: any = mockData.root;
 
     for (let i = 1; i < currentPath.length; i++) {
-      const pathSegment = currentPath[i]
-      current = current.children.find((item: DriveItem) => item.id === pathSegment)
+      const pathSegment = currentPath[i];
+      current = current.children.find(
+        (item: DriveItem) => item.id === pathSegment,
+      );
       if (current) {
-        names.push(current.name)
+        names.push(current.name);
       }
     }
-    return names
-  }
+    return names;
+  };
 
   // Get file icon
   const getFileIcon = (fileType: string) => {
     switch (fileType) {
       case "image":
-        return <ImageIcon className="h-4 w-4 text-blue-400" />
+        return <ImageIcon className="h-4 w-4 text-blue-400" />;
       case "document":
       case "pdf":
-        return <FileText className="h-4 w-4 text-red-400" />
+        return <FileText className="h-4 w-4 text-red-400" />;
       case "audio":
-        return <Music className="h-4 w-4 text-green-400" />
+        return <Music className="h-4 w-4 text-green-400" />;
       case "video":
-        return <Video className="h-4 w-4 text-purple-400" />
+        return <Video className="h-4 w-4 text-purple-400" />;
       default:
-        return <File className="h-4 w-4 text-gray-400" />
+        return <File className="h-4 w-4 text-gray-400" />;
     }
-  }
+  };
 
-  // Mock upload function
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      console.log("Selected", file.name);
+    }
+  };
   const handleUpload = () => {
-    alert("Upload functionality would be implemented here!")
-  }
+    alert("Upload functionality would be implemented here!");
+    fileInputRef.current?.click();
+  };
 
-  const currentFolder = getCurrentFolder()
-  const breadcrumbNames = getBreadcrumbNames()
+  const currentFolder = getCurrentFolder();
+  const breadcrumbNames = getBreadcrumbNames();
 
   // Filter items based on search
   const filteredItems = currentFolder.children.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
       {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-900/60">
         <div className="flex h-16 items-center px-6">
-          <div className="flex items-center space-x-4 flex-1">
+          <div className="flex flex-1 items-center space-x-4">
             <h1 className="text-xl font-semibold text-white">Drive</h1>
 
             {/* Search */}
-            <div className="flex-1 max-w-md">
+            <div className="max-w-md flex-1">
               <Input
                 type="search"
                 placeholder="Search in Drive"
-                className="bg-gray-800 border-gray-700 text-gray-100 placeholder-gray-400"
+                className="border-gray-700 bg-gray-800 text-gray-100 placeholder-gray-400"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -237,23 +254,34 @@ export default function GoogleDriveClone() {
           </div>
 
           {/* Upload Button */}
-          <Button onClick={handleUpload} className="bg-blue-600 hover:bg-blue-700">
-            <Upload className="h-4 w-4 mr-2" />
+          <Button
+            onClick={handleUpload}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Upload className="mr-2 h-4 w-4" />
             Upload
           </Button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+          />
         </div>
 
         {/* Breadcrumbs */}
-        <div className="px-6 py-3 border-t border-gray-800">
+        <div className="border-t border-gray-800 px-6 py-3">
           <nav className="flex items-center space-x-1 text-sm">
             {breadcrumbNames.map((name, index) => (
               <div key={index} className="flex items-center">
-                {index > 0 && <ChevronRight className="h-4 w-4 text-gray-500 mx-1" />}
+                {index > 0 && (
+                  <ChevronRight className="mx-1 h-4 w-4 text-gray-500" />
+                )}
                 <button
                   onClick={() => navigateToBreadcrumb(index)}
-                  className={`px-2 py-1 rounded hover:bg-gray-800 transition-colors ${
+                  className={`rounded px-2 py-1 transition-colors hover:bg-gray-800 ${
                     index === breadcrumbNames.length - 1
-                      ? "text-white font-medium"
+                      ? "font-medium text-white"
                       : "text-gray-400 hover:text-gray-200"
                   }`}
                 >
@@ -269,9 +297,9 @@ export default function GoogleDriveClone() {
       <main className="p-6">
         <div className="space-y-4">
           {/* Items List */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700">
+          <div className="rounded-lg border border-gray-700 bg-gray-800">
             {/* List Header */}
-            <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-700 text-sm font-medium text-gray-400">
+            <div className="grid grid-cols-12 gap-4 border-b border-gray-700 p-4 text-sm font-medium text-gray-400">
               <div className="col-span-6">Name</div>
               <div className="col-span-2">Size</div>
               <div className="col-span-3">Modified</div>
@@ -282,22 +310,27 @@ export default function GoogleDriveClone() {
             <div className="divide-y divide-gray-700">
               {filteredItems.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">
-                  {searchQuery ? "No items match your search" : "This folder is empty"}
+                  {searchQuery
+                    ? "No items match your search"
+                    : "This folder is empty"}
                 </div>
               ) : (
                 filteredItems.map((item) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-4 p-4 hover:bg-gray-750 transition-colors group">
+                  <div
+                    key={item.id}
+                    className="hover:bg-gray-750 group grid grid-cols-12 gap-4 p-4 transition-colors"
+                  >
                     {/* Name */}
                     <div className="col-span-6 flex items-center space-x-3">
                       {item.type === "folder" ? (
-                        <Folder className="h-5 w-5 text-blue-400 flex-shrink-0" />
+                        <Folder className="h-5 w-5 flex-shrink-0 text-blue-400" />
                       ) : (
                         getFileIcon((item as FileItem).fileType)
                       )}
                       {item.type === "folder" ? (
                         <button
                           onClick={() => navigateToFolder(item.id, item.name)}
-                          className="text-left hover:text-blue-400 transition-colors truncate"
+                          className="truncate text-left transition-colors hover:text-blue-400"
                         >
                           {item.name}
                         </button>
@@ -306,7 +339,7 @@ export default function GoogleDriveClone() {
                           href={(item as FileItem).url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-left hover:text-blue-400 transition-colors truncate"
+                          className="truncate text-left transition-colors hover:text-blue-400"
                         >
                           {item.name}
                         </a>
@@ -330,12 +363,15 @@ export default function GoogleDriveClone() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-8 w-8 p-0 opacity-0 transition-opacity group-hover:opacity-100"
                           >
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-gray-800 border-gray-700">
+                        <DropdownMenuContent
+                          align="end"
+                          className="border-gray-700 bg-gray-800"
+                        >
                           {item.type === "file" && (
                             <DropdownMenuItem asChild>
                               <a
@@ -344,14 +380,16 @@ export default function GoogleDriveClone() {
                                 rel="noopener noreferrer"
                                 className="flex items-center"
                               >
-                                <Download className="h-4 w-4 mr-2" />
+                                <Download className="mr-2 h-4 w-4" />
                                 Download
                               </a>
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem>Share</DropdownMenuItem>
                           <DropdownMenuItem>Rename</DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-400">Delete</DropdownMenuItem>
+                          <DropdownMenuItem className="text-red-400">
+                            Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -363,5 +401,5 @@ export default function GoogleDriveClone() {
         </div>
       </main>
     </div>
-  )
+  );
 }
