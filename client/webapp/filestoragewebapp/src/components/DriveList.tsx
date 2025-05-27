@@ -3,6 +3,9 @@
 import {
   Folder,
   Download,
+  Share,
+  Trash2,
+  FolderPen,
   MoreVertical,
   File,
   ImageIcon,
@@ -25,7 +28,11 @@ type Props = {
   getFileIcon: (fileType: string) => React.ReactNode;
 };
 
-export default function DriveList({ items, onFolderClick, getFileIcon }: Props) {
+export default function DriveList({
+  items,
+  onFolderClick,
+  getFileIcon,
+}: Props) {
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800">
       {/* List Header */}
@@ -97,7 +104,7 @@ export default function DriveList({ items, onFolderClick, getFileIcon }: Props) 
                     className="border-gray-700 bg-gray-800"
                   >
                     {item.type === "file" && (
-                      <DropdownMenuItem asChild>
+                      <DropdownMenuItem className="text-white" asChild>
                         <a
                           href={(item as FileItem).url}
                           target="_blank"
@@ -109,9 +116,20 @@ export default function DriveList({ items, onFolderClick, getFileIcon }: Props) 
                         </a>
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem>Share</DropdownMenuItem>
-                    <DropdownMenuItem>Rename</DropdownMenuItem>
+                    <DropdownMenuItem className="text-white">
+                      {" "}
+                      <Share className="mr-2 h-4 w-4" />
+                      Share
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem className="text-white">
+                      {" "}
+                      <FolderPen className="mr-2 h-4 w-4" />
+                      Rename
+                    </DropdownMenuItem>
+
                     <DropdownMenuItem className="text-red-400">
+                      <Trash2 className="mr-2 h-4 w-4" />
                       Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>

@@ -41,23 +41,33 @@ export default function GoogleDriveClone() {
     if (file) {
       console.log("Selected", file.name);
       reader.onload = async (e) => {
+        if (!e.target || !e.target.result) return;
         const arrayBuffer = e.target.result;
         // encrypt with aesgcm
         // 2 - do signing
 
-        // create new file objct 3
+        // Create a Blob URL for the file contents
+        const blob = new Blob([arrayBuffer], { type: file.type });
+        const fileUrl = URL.createObjectURL(blob);
+
+        // Infer fileType for your FileItem type
+        let fileType: FileItem["fileType"] = "document";
+        if (file.type.startsWith("image")) fileType = "image";
+        else if (file.type.startsWith("audio")) fileType = "audio";
+        else if (file.type.startsWith("video")) fileType = "video";
+        else if (file.type === "application/pdf") fileType = "pdf";
 
         const newFile: FileItem = {
           id: file.name + Date.now(),
           name: file.name,
           type: "file",
-          fileType: file.type,
+          fileType,
           size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
           modified: "just now",
-          url: "",
+          url: fileUrl,
         };
 
-        // adding to mockdata - will change to actual db
+        // Add to mockdata
         const folder = getCurrentFolder();
         folder.children.push(newFile);
         forceUpdate({});
