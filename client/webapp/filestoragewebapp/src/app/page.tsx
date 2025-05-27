@@ -1,4 +1,4 @@
-import GoogleDriveClone from "../../google-drive-clone";
+import GoogleDriveClone from "./google-drive-clone";
 
 export default function Page() {
   return <GoogleDriveClone />;
