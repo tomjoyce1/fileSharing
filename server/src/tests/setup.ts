@@ -14,8 +14,11 @@ import { eq } from "drizzle-orm";
 let client: any;
 export let testDb: any;
 
-let burger: Burger;
-let serverPort: number;
+// Global singleton server instance
+let globalBurger: Burger | null = null;
+let globalServerPort = 3001;
+let isGlobalServerRunning = false;
+let serverStartPromise: Promise<void> | null = null;
 
 export async function setupTestDb() {
   // Create a new client for each test run
@@ -31,12 +34,27 @@ export async function setupTestDb() {
   });
 }
 
-export async function startTestServer() {
-  // Find available port
-  serverPort = 3001;
+export async function ensureTestServerRunning() {
+  // if server is already running, return immediately
+  if (isGlobalServerRunning && globalBurger) {
+    return;
+  }
+
+  // if server is in the process of starting, wait for it
+  if (serverStartPromise) {
+    return serverStartPromise;
+  }
+
+  // start the server
+  serverStartPromise = startGlobalServer();
+  return serverStartPromise;
+}
+
+async function startGlobalServer() {
+  if (isGlobalServerRunning) return;
 
   // Create Burger instance
-  burger = new Burger({
+  globalBurger = new Burger({
     apiDir: "src/api",
     title: "Test API",
     version: "1.0.0",
@@ -45,16 +63,23 @@ export async function startTestServer() {
     debug: false,
   });
 
-  // Start server
-  await new Promise<void>((resolve) => {
-    burger.serve(serverPort, () => {
+  // start server
+  await new Promise<void>((resolve, reject) => {
+    globalBurger!.serve(globalServerPort, () => {
+      isGlobalServerRunning = true;
+      console.log(`Test server started on port ${globalServerPort}`);
       resolve();
     });
   });
 }
 
+// Legacy function for backward compatibility
+export async function startTestServer() {
+  return ensureTestServerRunning();
+}
+
 export function getTestServerUrl(): string {
-  return `http://localhost:${serverPort}`;
+  return `http://localhost:${globalServerPort}`;
 }
 
 export async function createTestUser(username: string = "testuser") {
@@ -85,12 +110,5 @@ export function cleanupEncryptedDrive() {
   const encryptedDriveDir = join(process.cwd(), "encrypted-drive");
   if (existsSync(encryptedDriveDir)) {
     rmSync(encryptedDriveDir, { recursive: true, force: true });
-  }
-}
-
-// Clean up database after tests
-export async function teardownTestDb() {
-  if (client) {
-    client.close();
   }
 }

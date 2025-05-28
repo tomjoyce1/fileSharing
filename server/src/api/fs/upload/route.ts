@@ -11,6 +11,8 @@ import { existsSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { KeyBundlePublic } from "~/utils/schema";
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
 export const schema = {
   post: {
     body: z
@@ -151,7 +153,7 @@ export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
   if (!req.validated?.body) {
-    return Response.json({ message: "Invalid request body" }, { status: 400 });
+    return Response.json({ message: "Internal Server Error" }, { status: 500 });
   }
 
   const {
@@ -163,16 +165,20 @@ export async function POST(
   } = req.validated.body;
 
   // Authenticate user and get user from database
-  const requestBodyString = JSON.stringify(req.validated.body);
   const userResult = await getAuthenticatedUserFromRequest(
     req,
-    requestBodyString
+    JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
     return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   const user = userResult.value;
+
+  // ensure file size is within limit
+  if (file_content.length > MAX_FILE_SIZE) {
+    return Response.json({ message: "File too large" }, { status: 413 });
+  }
 
   // Verify file record signatures
   const userPublicBundle = deserializeKeyBundlePublic(

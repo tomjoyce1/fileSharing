@@ -4,7 +4,7 @@ import {
   serializeKeyBundlePublic,
 } from "~/utils/crypto/KeyHelper";
 import { POST } from "~/api/auth/register/route";
-import { setupTestDb, teardownTestDb, testDb } from "./setup";
+import { setupTestDb, testDb } from "./setup";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -16,10 +16,6 @@ describe("Register API", () => {
     mock.module("~/db", () => ({
       db: testDb,
     }));
-  });
-
-  afterAll(async () => {
-    await teardownTestDb();
   });
 
   test("register user works", async () => {
