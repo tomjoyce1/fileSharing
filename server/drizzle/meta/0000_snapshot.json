@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "41b86195-fd9b-49c2-add0-71fbd2ecb953",
+  "id": "df2ee26c-2dbb-444a-8cb5-550610fa20f2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "files_table": {
@@ -28,15 +28,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "metadata_payload": {
-          "name": "metadata_payload",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "metadata_payload_nonce": {
-          "name": "metadata_payload_nonce",
+        "metadata": {
+          "name": "metadata",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
@@ -131,20 +124,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "pre_quantum_secret_part": {
-          "name": "pre_quantum_secret_part",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "post_quantum_secret_part": {
-          "name": "post_quantum_secret_part",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "encrypted_fek": {
           "name": "encrypted_fek",
           "type": "blob",
@@ -152,8 +131,36 @@
           "notNull": true,
           "autoincrement": false
         },
+        "encrypted_fek_salt": {
+          "name": "encrypted_fek_salt",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "encrypted_fek_nonce": {
           "name": "encrypted_fek_nonce",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_mek": {
+          "name": "encrypted_mek",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_mek_salt": {
+          "name": "encrypted_mek_salt",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_mek_nonce": {
+          "name": "encrypted_mek_nonce",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,

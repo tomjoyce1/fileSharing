@@ -34,10 +34,6 @@ export interface KeyBundlePrivate {
     };
   };
   postQuantum: {
-    identityKem: {
-      publicKey: Uint8Array;
-      privateKey: Uint8Array;
-    };
     identitySigning: {
       publicKey: Uint8Array;
       privateKey: Uint8Array;
@@ -51,8 +47,23 @@ export interface KeyBundlePublic {
     identitySigningPublicKey: KeyObject;
   };
   postQuantum: {
-    identityKemPublicKey: Uint8Array;
     identitySigningPublicKey: Uint8Array;
+  };
+}
+
+export interface FileMetadataListItem {
+  file_id: number;
+  metadata: string; // base64 encoded encrypted metadata for transport
+  pre_quantum_signature: string;
+  post_quantum_signature: string;
+  is_owner: boolean;
+  shared_access?: {
+    encrypted_fek: string;
+    encrypted_fek_salt: string;
+    encrypted_fek_nonce: string;
+    encrypted_mek: string;
+    encrypted_mek_salt: string;
+    encrypted_mek_nonce: string;
   };
 }
 
@@ -70,10 +81,6 @@ export const KeyBundlePrivateSerializable = z
       }),
     }),
     postQuantum: z.object({
-      identityKem: z.object({
-        publicKey: z.string(), // Kyber public key (base64)
-        privateKey: z.string(), // Kyber private key (base64)
-      }),
       identitySigning: z.object({
         publicKey: z.string(), // Dilithium public key (base64)
         privateKey: z.string(), // Dilithium private key (base64)

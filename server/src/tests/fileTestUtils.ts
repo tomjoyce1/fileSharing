@@ -1,35 +1,59 @@
 import { expect } from "bun:test";
-import { createHash, sign as nodeSign, verify } from "node:crypto";
+import { sign as nodeSign, verify } from "node:crypto";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import { createSignedPOST } from "~/utils/crypto/NetworkingHelper";
-import { testDb } from "./setup";
-import { filesTable } from "~/db/schema";
+import {
+  createFileSignature,
+  encryptFile,
+  decryptFileContent,
+  decryptMetadata,
+  type ClientFileData,
+} from "~/utils/crypto/FileEncryption";
 
-export function createTestMetadata(overrides: Partial<any> = {}) {
+export interface TestEncryptedFileData {
+  encrypted_file_content: string;
+  encrypted_metadata: string;
+  client_data: ClientFileData;
+  original_metadata: any;
+}
+
+export function createEncryptedFileContent(
+  content = "test file content",
+  metadata = { filename: "test-document.pdf", file_size_bytes: 1024 }
+): TestEncryptedFileData {
+  const plaintext_content = new TextEncoder().encode(content);
+  const encryptionResult = encryptFile(plaintext_content, metadata);
+  if (encryptionResult.isErr()) {
+    throw new Error(`Encryption failed: ${encryptionResult.error}`);
+  }
+
+  const { encrypted_content, encrypted_metadata, client_data } =
+    encryptionResult.value;
+
   return {
-    filename: "test-document.pdf",
-    file_size_bytes: 1024,
-    hash_of_encrypted_content: "sha256hash123",
-    ...overrides,
+    encrypted_file_content: Buffer.from(
+      encrypted_content.encrypted_data
+    ).toString("base64"),
+    encrypted_metadata: Buffer.from(encrypted_metadata.encrypted_data).toString(
+      "base64"
+    ),
+    client_data,
+    original_metadata: metadata,
   };
 }
 
-export function createFileContent(content = "encrypted file content") {
-  return Buffer.from(content).toString("base64");
-}
-
 export function createFileSignatures(
-  metadata_payload: string,
+  file_content: string,
+  metadata: string,
   testUser: any,
   testUserKeyBundle: any,
   useBadSignature = false
 ) {
-  const metadataBuffer = Buffer.from(metadata_payload, "base64");
-  const metadataHash = createHash("sha256")
-    .update(metadataBuffer)
-    .digest("hex");
-
-  const dataToSign = `${testUser.user_id}|${metadataHash}`;
+  const dataToSign = createFileSignature(
+    testUser.user_id,
+    file_content,
+    metadata
+  );
 
   const preQuantumSignature = nodeSign(
     null,
@@ -52,18 +76,14 @@ export function createFileSignatures(
 
 export function createUploadRequestBody(
   fileContent: string,
-  metadata: any,
+  encrypted_metadata: string,
   testUser: any,
   testUserKeyBundle: any,
-  nonce = "nonce123",
   useBadSignature = false
 ) {
-  const metadataPayload = Buffer.from(JSON.stringify(metadata)).toString(
-    "base64"
-  );
-  const metadataNonce = Buffer.from(nonce).toString("base64");
   const signatures = createFileSignatures(
-    metadataPayload,
+    fileContent,
+    encrypted_metadata,
     testUser,
     testUserKeyBundle,
     useBadSignature
@@ -71,8 +91,7 @@ export function createUploadRequestBody(
 
   return {
     file_content: fileContent,
-    metadata_payload: metadataPayload,
-    metadata_payload_nonce: metadataNonce,
+    metadata: encrypted_metadata,
     ...signatures,
   };
 }
@@ -96,18 +115,14 @@ export async function makeAuthenticatedPOST(
 
 export function verifyFileSignatures(
   user_id: number,
-  metadata_payload: string,
+  file_content: string,
+  metadata: string,
   pre_quantum_signature: string,
   post_quantum_signature: string,
   userPublicBundle: any
 ): boolean {
   try {
-    const metadataBuffer = Buffer.from(metadata_payload, "base64");
-    const metadataHash = createHash("sha256")
-      .update(metadataBuffer)
-      .digest("hex");
-
-    const dataToSign = `${user_id}|${metadataHash}`;
+    const dataToSign = createFileSignature(user_id, file_content, metadata);
 
     const preQuantumValid = verify(
       null,
@@ -133,17 +148,18 @@ export async function uploadTestFile(
   testUserKeyBundle: any,
   serverUrl: string,
   fileContent?: string,
-  metadata?: any,
-  nonce?: string
-): Promise<number> {
-  const content = fileContent || createFileContent("test file content");
-  const meta = metadata || createTestMetadata();
+  metadata?: any
+): Promise<{ file_id: number; test_data: TestEncryptedFileData }> {
+  const clonedMetadata = metadata
+    ? JSON.parse(JSON.stringify(metadata))
+    : undefined;
+  const encrypted = createEncryptedFileContent(fileContent, clonedMetadata);
+
   const uploadBody = createUploadRequestBody(
-    content,
-    meta,
+    encrypted.encrypted_file_content,
+    encrypted.encrypted_metadata,
     testUser,
-    testUserKeyBundle,
-    nonce
+    testUserKeyBundle
   );
 
   const response = await makeAuthenticatedPOST(
@@ -155,10 +171,15 @@ export async function uploadTestFile(
   );
   expect(response.status).toBe(201);
 
-  // get the uploaded file from database
-  const files = await testDb.select().from(filesTable);
-  expect(files).toHaveLength(1);
-  return files[0].file_id;
+  // get the file_id from the response
+  const responseData = (await response.json()) as {
+    file_id: number;
+    message: string;
+  };
+  expect(responseData.file_id).toBeDefined();
+  expect(typeof responseData.file_id).toBe("number");
+
+  return { file_id: responseData.file_id, test_data: encrypted };
 }
 
 export async function downloadFile(
@@ -177,8 +198,47 @@ export async function downloadFile(
   );
 }
 
-export function createLargeFileContent(sizeInMB: number): string {
+export function createLargeFileContent(
+  sizeInMB: number
+): TestEncryptedFileData {
   const sizeInBytes = sizeInMB * 1024 * 1024;
-  const buffer = Buffer.alloc(sizeInBytes, "a");
-  return buffer.toString("base64");
+  const content = "a".repeat(sizeInBytes);
+
+  return createEncryptedFileContent(content);
+}
+
+export function decryptDownloadedContent(
+  encrypted_file_content: string,
+  client_data: ClientFileData
+): string {
+  const encryptedData = {
+    encrypted_data: new Uint8Array(
+      Buffer.from(encrypted_file_content, "base64")
+    ),
+    nonce: client_data.fileNonce,
+  };
+
+  const decryptResult = decryptFileContent(encryptedData, client_data.fek);
+  if (decryptResult.isErr()) {
+    throw new Error(`Decryption failed: ${decryptResult.error}`);
+  }
+
+  return new TextDecoder().decode(decryptResult.value);
+}
+
+export function decryptDownloadedMetadata(
+  encrypted_metadata: string,
+  client_data: ClientFileData
+): any {
+  const encryptedData = {
+    encrypted_data: new Uint8Array(Buffer.from(encrypted_metadata, "base64")),
+    nonce: client_data.metadataNonce,
+  };
+
+  const decryptResult = decryptMetadata(encryptedData, client_data);
+  if (decryptResult.isErr()) {
+    throw new Error(`Metadata decryption failed: ${decryptResult.error}`);
+  }
+
+  return decryptResult.value;
 }

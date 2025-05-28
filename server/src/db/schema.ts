@@ -36,11 +36,10 @@ export const filesTable = sqliteTable(
       }),
     storage_path: text("storage_path").notNull().unique(),
 
-    metadata_payload: blob("metadata_payload", { mode: "buffer" }).notNull(),
-    metadata_payload_nonce: blob("metadata_payload_nonce", {
-      mode: "buffer",
-    }).notNull(),
+    // encrypted metadata (encrypted with MEK derived from FEK)
+    metadata: blob("metadata", { mode: "buffer" }).notNull(),
 
+    // sig for file record
     pre_quantum_signature: blob("pre_quantum_signature", {
       mode: "buffer",
     }).notNull(),
@@ -81,18 +80,25 @@ export const sharedAccessTable = sqliteTable(
         onUpdate: "cascade",
       }),
 
-    pre_quantum_secret_part: blob("pre_quantum_secret_part", {
-      mode: "buffer",
-    }).notNull(),
-    post_quantum_secret_part: blob("post_quantum_secret_part", {
-      mode: "buffer",
-    }).notNull(),
-
+    // Encrypted FEK (for decrypting file content)
     encrypted_fek: blob("encrypted_fek", { mode: "buffer" }).notNull(),
+    encrypted_fek_salt: blob("encrypted_fek_salt", {
+      mode: "buffer",
+    }).notNull(),
     encrypted_fek_nonce: blob("encrypted_fek_nonce", {
       mode: "buffer",
     }).notNull(),
 
+    // Encrypted MEK (for decrypting metadata)
+    encrypted_mek: blob("encrypted_mek", { mode: "buffer" }).notNull(),
+    encrypted_mek_salt: blob("encrypted_mek_salt", {
+      mode: "buffer",
+    }).notNull(),
+    encrypted_mek_nonce: blob("encrypted_mek_nonce", {
+      mode: "buffer",
+    }).notNull(),
+
+    // signatures
     pre_quantum_signature: blob("pre_quantum_signature", {
       mode: "buffer",
     }).notNull(),

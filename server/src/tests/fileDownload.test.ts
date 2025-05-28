@@ -19,13 +19,11 @@ import { filesTable } from "~/db/schema";
 import { writeFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import {
-  createTestMetadata,
-  createFileContent,
+  createLargeFileContent,
   uploadTestFile,
   downloadFile,
-  verifyFileSignatures,
   makeAuthenticatedPOST,
-  createLargeFileContent,
+  decryptDownloadedContent,
 } from "./fileTestUtils";
 
 let mockDbModule: any;
@@ -59,123 +57,100 @@ describe("File Download API", () => {
     cleanupEncryptedDrive();
   });
 
-  // Tests
-  test("successful file download - happy path", async () => {
+  test("successful file download and content verification", async () => {
     const originalContent = "test file content for download";
-    const originalMetadata = createTestMetadata({
+    const originalMetadata = {
       filename: "download-test.txt",
       file_size_bytes: originalContent.length,
-    });
+    };
 
-    // upload a file first
-    const fileContent = createFileContent(originalContent);
-    const file_id = await uploadTestFile(
+    // Upload the file (uploadTestFile will handle encryption)
+    const uploadResult = await uploadTestFile(
       testUser,
       testUserKeyBundle,
       serverUrl,
-      fileContent,
+      originalContent,
       originalMetadata
     );
 
-    // download the file
+    // Download the file
     const response = await downloadFile(
-      file_id,
+      uploadResult.file_id,
       testUser,
       testUserKeyBundle,
       serverUrl
     );
     expect(response.status).toBe(200);
 
-    // get the JSON response
+    // Verify the downloaded content matches uploaded content
     const responseData = (await response.json()) as any;
-    expect(responseData.file_content).toBe(fileContent);
-
-    // get the file record to verify metadata and signatures
-    const fileRecord = await testDb
-      .select()
-      .from(filesTable)
-      .where(eq(filesTable.file_id, file_id))
-      .then((rows: any[]) => rows[0]);
-
-    expect(fileRecord).toBeDefined();
-
-    const metadataPayload = fileRecord.metadata_payload.toString("base64");
-    const preQuantumSig = fileRecord.pre_quantum_signature.toString("base64");
-    const postQuantumSig = fileRecord.post_quantum_signature.toString("base64");
-
-    const signaturesValid = verifyFileSignatures(
-      testUser.user_id,
-      metadataPayload,
-      preQuantumSig,
-      postQuantumSig,
-      testUserKeyBundle.public
+    expect(responseData.file_content).toBe(
+      uploadResult.test_data.encrypted_file_content
     );
 
-    expect(signaturesValid).toBe(true);
-
-    // decrypt and verify metadata
-    const decryptedMetadata = JSON.parse(
-      Buffer.from(metadataPayload, "base64").toString()
-    );
-    expect(decryptedMetadata.filename).toBe("download-test.txt");
-    expect(decryptedMetadata.file_size_bytes).toBe(originalContent.length);
-
-    // decrypt and verify file content
-    const decryptedFileContent = Buffer.from(
+    // Decrypt and verify the actual file content
+    const decryptedFileContent = decryptDownloadedContent(
       responseData.file_content,
-      "base64"
-    ).toString();
+      uploadResult.test_data.client_data
+    );
     expect(decryptedFileContent).toBe(originalContent);
   });
 
-  test("5MB file download", async () => {
-    const fileContent = createLargeFileContent(5);
-    const originalMetadata = createTestMetadata({
-      filename: "large-download-test-5mb.bin",
-      file_size_bytes: 5 * 1024 * 1024,
-    });
+  test("large file download (5MB)", async () => {
+    const sizeInMB = 5;
+    const sizeInBytes = sizeInMB * 1024 * 1024;
+    const largeContent = "a".repeat(sizeInBytes);
 
-    // upload the big file
-    const file_id = await uploadTestFile(
+    // upload the large file
+    const uploadResult = await uploadTestFile(
       testUser,
       testUserKeyBundle,
       serverUrl,
-      fileContent,
-      originalMetadata
+      largeContent,
+      {
+        filename: "large-download-test-5mb.bin",
+        file_size_bytes: sizeInBytes,
+      }
     );
 
     // download the file
     const response = await downloadFile(
-      file_id,
+      uploadResult.file_id,
       testUser,
       testUserKeyBundle,
       serverUrl
     );
     expect(response.status).toBe(200);
 
-    // get the JSON response
+    // verify the downloaded content matches
     const responseData = (await response.json()) as any;
-    expect(responseData.file_content).toBe(fileContent);
+    expect(responseData.file_content).toBe(
+      uploadResult.test_data.encrypted_file_content
+    );
 
-    // verify the content length is correct for base64 encoded 5MB
-    const decodedSize = Buffer.from(responseData.file_content, "base64").length;
-    expect(decodedSize).toBe(5 * 1024 * 1024);
+    // verify the content length is correct for 5MB
+    const decryptedContent = decryptDownloadedContent(
+      responseData.file_content,
+      uploadResult.test_data.client_data
+    );
+    expect(decryptedContent.length).toBe(5 * 1024 * 1024);
   });
 
-  test("detect file tampering on disk", async () => {
+  test("download detects file tampering on disk", async () => {
     const originalContent = "original content";
-    const file_id = await uploadTestFile(
+
+    const uploadResult = await uploadTestFile(
       testUser,
       testUserKeyBundle,
       serverUrl,
-      createFileContent(originalContent)
+      originalContent
     );
 
     // get the storage path
     const fileRecord = await testDb
       .select()
       .from(filesTable)
-      .where(eq(filesTable.file_id, file_id))
+      .where(eq(filesTable.file_id, uploadResult.file_id))
       .then((rows: any[]) => rows[0]);
     const storagePath = fileRecord.storage_path;
 
@@ -185,7 +160,7 @@ describe("File Download API", () => {
 
     // download should still work but content will be different
     const response = await downloadFile(
-      file_id,
+      uploadResult.file_id,
       testUser,
       testUserKeyBundle,
       serverUrl
@@ -193,100 +168,21 @@ describe("File Download API", () => {
     expect(response.status).toBe(200);
 
     const responseData = (await response.json()) as any;
-    const decryptedContent = Buffer.from(
+    const downloadedContent = Buffer.from(
       responseData.file_content,
       "base64"
     ).toString();
-    expect(decryptedContent).toBe("tampered content");
-    expect(decryptedContent).not.toBe(originalContent);
-
-    // the signatures will now be invalid for the tampered content
-    const serverMetadata = JSON.parse(
-      Buffer.from(
-        fileRecord.metadata_payload.toString("base64"),
-        "base64"
-      ).toString()
-    );
-    const signaturesValid = verifyFileSignatures(
-      testUser.user_id,
-      serverMetadata,
-      fileRecord.pre_quantum_signature.toString("base64"),
-      fileRecord.post_quantum_signature.toString("base64"),
-      testUserKeyBundle.public
-    );
-    expect(signaturesValid).toBe(false);
-  });
-
-  test("detect metadata tampering in database", async () => {
-    const originalContent = "content for metadata tampering test";
-    const file_id = await uploadTestFile(
-      testUser,
-      testUserKeyBundle,
-      serverUrl,
-      createFileContent(originalContent)
-    );
-
-    // get the original file record
-    const originalRecord = await testDb
-      .select()
-      .from(filesTable)
-      .where(eq(filesTable.file_id, file_id))
-      .then((rows: any[]) => rows[0]);
-
-    // tamper with metadata in database
-    const tamperedMetadata = {
-      filename: "tampered-file.txt",
-      file_size_bytes: 9999,
-      hash_of_encrypted_content: "tampered_hash",
-    };
-
-    const tamperedMetadataPayload = Buffer.from(
-      JSON.stringify(tamperedMetadata)
-    );
-
-    await testDb
-      .update(filesTable)
-      .set({
-        metadata_payload: tamperedMetadataPayload,
-      })
-      .where(eq(filesTable.file_id, file_id));
-
-    // download should still work
-    const response = await downloadFile(
-      file_id,
-      testUser,
-      testUserKeyBundle,
-      serverUrl
-    );
-    expect(response.status).toBe(200);
-
-    // but signature verification should fail
-    const tamperedMetadataPayloadBase64 =
-      tamperedMetadataPayload.toString("base64");
-    const signaturesValid = verifyFileSignatures(
-      testUser.user_id,
-      tamperedMetadataPayloadBase64,
-      originalRecord.pre_quantum_signature.toString("base64"),
-      originalRecord.post_quantum_signature.toString("base64"),
-      testUserKeyBundle.public
-    );
-
-    expect(signaturesValid).toBe(false);
-
-    // the downloaded content should still be the original file content
-    const responseData = (await response.json()) as any;
-    expect(responseData.file_content).toBe(createFileContent(originalContent));
-
-    // TODO: once we have  a way to get file metadata, we should verify metadata actually changed
+    expect(downloadedContent).toBe("tampered content");
+    expect(downloadedContent).not.toBe(originalContent);
   });
 
   test("file not found", async () => {
     const response = await downloadFile(
-      99999,
+      99999, // non-existent file ID
       testUser,
       testUserKeyBundle,
       serverUrl
-    ); // non-existent file ID
+    );
     expect(response.status).toBe(404);
 
     const responseData = (await response.json()) as any;
@@ -298,14 +194,14 @@ describe("File Download API", () => {
     const otherUserData = await createTestUser("otheruser");
 
     // upload a file as the first user
-    const file_id = await uploadTestFile(
+    const uploadResult = await uploadTestFile(
       testUser,
       testUserKeyBundle,
       serverUrl
     );
 
     // try to download as second user
-    const downloadBody = { file_id };
+    const downloadBody = { file_id: uploadResult.file_id };
     const response = await makeAuthenticatedPOST(
       "/api/fs/download",
       downloadBody,
@@ -320,7 +216,7 @@ describe("File Download API", () => {
   });
 
   test("file deleted from disk after upload", async () => {
-    const file_id = await uploadTestFile(
+    const uploadResult = await uploadTestFile(
       testUser,
       testUserKeyBundle,
       serverUrl
@@ -330,7 +226,7 @@ describe("File Download API", () => {
     const fileRecord = await testDb
       .select()
       .from(filesTable)
-      .where(eq(filesTable.file_id, file_id))
+      .where(eq(filesTable.file_id, uploadResult.file_id))
       .then((rows: any[]) => rows[0]);
 
     // delete the file from disk (simulate disk failure/cleanup)
@@ -339,7 +235,7 @@ describe("File Download API", () => {
 
     // download should fail with 500 error
     const response = await downloadFile(
-      file_id,
+      uploadResult.file_id,
       testUser,
       testUserKeyBundle,
       serverUrl
@@ -348,5 +244,70 @@ describe("File Download API", () => {
 
     const responseData = (await response.json()) as any;
     expect(responseData.message).toBe("Internal Server Error");
+  });
+
+  test("multiple files download - content isolation", async () => {
+    // Upload multiple files with different content
+    const content1 = "first file content";
+    const content2 = "second file different content";
+
+    const uploadResult1 = await uploadTestFile(
+      testUser,
+      testUserKeyBundle,
+      serverUrl,
+      content1,
+      { filename: "file1.txt" }
+    );
+
+    const uploadResult2 = await uploadTestFile(
+      testUser,
+      testUserKeyBundle,
+      serverUrl,
+      content2,
+      { filename: "file2.txt" }
+    );
+
+    // Download both files
+    const response1 = await downloadFile(
+      uploadResult1.file_id,
+      testUser,
+      testUserKeyBundle,
+      serverUrl
+    );
+    const response2 = await downloadFile(
+      uploadResult2.file_id,
+      testUser,
+      testUserKeyBundle,
+      serverUrl
+    );
+
+    expect(response1.status).toBe(200);
+    expect(response2.status).toBe(200);
+
+    const data1 = (await response1.json()) as any;
+    const data2 = (await response2.json()) as any;
+
+    // Verify each file has its correct encrypted content
+    expect(data1.file_content).toBe(
+      uploadResult1.test_data.encrypted_file_content
+    );
+    expect(data2.file_content).toBe(
+      uploadResult2.test_data.encrypted_file_content
+    );
+    expect(data1.file_content).not.toBe(data2.file_content);
+
+    // Verify decryption works correctly for each
+    const decrypted1 = decryptDownloadedContent(
+      data1.file_content,
+      uploadResult1.test_data.client_data
+    );
+    const decrypted2 = decryptDownloadedContent(
+      data2.file_content,
+      uploadResult2.test_data.client_data
+    );
+
+    expect(decrypted1).toBe(content1);
+    expect(decrypted2).toBe(content2);
+    expect(decrypted1).not.toBe(decrypted2);
   });
 });

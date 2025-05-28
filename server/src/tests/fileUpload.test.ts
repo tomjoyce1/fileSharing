@@ -16,14 +16,14 @@ import {
   cleanupEncryptedDrive,
 } from "./setup";
 import { filesTable } from "~/db/schema";
-import { createHash, sign as nodeSign } from "node:crypto";
+import { sign as nodeSign } from "node:crypto";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import {
-  createTestMetadata,
-  createFileContent,
+  createEncryptedFileContent,
   createUploadRequestBody,
   makeAuthenticatedPOST,
   createLargeFileContent,
+  decryptDownloadedContent,
 } from "./fileTestUtils";
 
 let mockDbModule: any;
@@ -138,7 +138,7 @@ describe("File Upload API", () => {
     expect(file.owner_user_id).toBe(testUser.user_id);
     expect(file.storage_path).toContain("encrypted-drive");
     expect(file.storage_path).toContain(".enc");
-    expect(file.metadata_payload.length).toBeGreaterThan(0);
+    expect(file.metadata.length).toBeGreaterThan(0);
 
     return file;
   }
@@ -163,35 +163,39 @@ describe("File Upload API", () => {
     expect(files).toHaveLength(0);
   }
 
-  test("successful file upload", async () => {
-    const fileContent = createFileContent();
-    const metadata = createTestMetadata();
+  test("successful file upload with encryption", async () => {
+    const originalContent = "test file content";
+    const encrypted = createEncryptedFileContent(originalContent);
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
       testUserKeyBundle
     );
 
     const response = await makeAuthenticatedUploadRequest(requestBody);
     await expectSuccessfulUpload(response);
+
+    // verify we can decrypt it back to original content
+    const decryptedContent = decryptDownloadedContent(
+      encrypted.encrypted_file_content,
+      encrypted.client_data
+    );
+    expect(decryptedContent).toBe(originalContent);
   });
 
   test("missing request body validation", async () => {
     const response = await makeUnauthenticatedRequest({});
-    const responseData = (await response.json()) as any;
     expect(response.status).toBe(400);
   });
 
   test("authentication failure - missing username header", async () => {
-    const fileContent = createFileContent("test");
-    const metadata = createTestMetadata();
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "nonce"
+      testUserKeyBundle
     );
 
     const response = await makeUnauthenticatedRequest(requestBody, {
@@ -202,14 +206,12 @@ describe("File Upload API", () => {
   });
 
   test("authentication failure - user not found", async () => {
-    const fileContent = createFileContent("test");
-    const metadata = createTestMetadata();
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "nonce"
+      testUserKeyBundle
     );
 
     const response = await makeUnauthenticatedRequest(requestBody, {
@@ -220,14 +222,12 @@ describe("File Upload API", () => {
   });
 
   test("authentication failure - invalid request signature", async () => {
-    const fileContent = createFileContent("test");
-    const metadata = createTestMetadata();
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "nonce"
+      testUserKeyBundle
     );
 
     const response = await makeUnauthenticatedRequest(requestBody, {
@@ -237,15 +237,13 @@ describe("File Upload API", () => {
     await expectUnauthorized(response);
   });
 
-  test("file signature verification failure", async () => {
-    const fileContent = createFileContent("test");
-    const metadata = createTestMetadata();
+  test("file record signature verification failure", async () => {
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
       testUserKeyBundle,
-      "nonce",
       true
     );
 
@@ -254,14 +252,12 @@ describe("File Upload API", () => {
   });
 
   test("replay attack protection - expired timestamp", async () => {
-    const fileContent = createFileContent("test");
-    const metadata = createTestMetadata();
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "nonce"
+      testUserKeyBundle
     );
 
     // create request with old timestamp
@@ -274,16 +270,17 @@ describe("File Upload API", () => {
     await expectUnauthorized(response);
   });
 
-  test("invalid base64 encoding", async () => {
+  test("invalid base64 encoding in file content", async () => {
+    const encrypted = createEncryptedFileContent("test");
     const requestBody = createUploadRequestBody(
-      "invalid-base64!@#",
-      createTestMetadata(),
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "valid-base64=="
+      testUserKeyBundle
     );
+
     // override with invalid base64
-    requestBody.metadata_payload = "invalid-base64!@#";
+    requestBody.file_content = "invalid-base64!@#";
 
     const response = await makeAuthenticatedUploadRequest(requestBody);
     expect(response.status).toBe(401);
@@ -291,58 +288,49 @@ describe("File Upload API", () => {
 
   test("large file upload", async () => {
     // create a large file content (1MB of data)
-    const largeContent = Buffer.alloc(1024 * 1024, "a");
-    const fileContent = largeContent.toString("base64");
-
-    const metadata = createTestMetadata({
-      file_size_bytes: largeContent.length,
-      filename: "large-file.pdf",
-    });
+    const largeContent = createLargeFileContent(1);
 
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      largeContent.encrypted_file_content,
+      largeContent.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "largenonce"
+      testUserKeyBundle
     );
     const response = await makeAuthenticatedUploadRequest(requestBody);
     await expectSuccessfulUpload(response);
   });
 
   test("metadata with special characters", async () => {
-    const fileContent = createFileContent("test content");
-
-    const metadata = createTestMetadata({
+    const fileContent = "test content";
+    const metadata = {
       filename: "файл с русскими символами.pdf",
-      description: "File with émojis 🚀 and spëcial chârs",
-      hash_of_encrypted_content: "special-chars-hash",
-    });
+      file_size_bytes: fileContent.length,
+      mime_type: "application/pdf",
+    };
 
+    const encrypted = createEncryptedFileContent(fileContent, metadata);
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "specialnonce"
+      testUserKeyBundle
     );
     const response = await makeAuthenticatedUploadRequest(requestBody);
     await expectSuccessfulUpload(response);
   });
 
-  test("empty file upload", async () => {
-    const fileContent = createFileContent("");
-    const metadata = createTestMetadata({
+  test("empty file upload should fail", async () => {
+    const metadata = {
       file_size_bytes: 0,
       filename: "empty.txt",
-    });
+    };
 
+    const encrypted = createEncryptedFileContent("", metadata);
     const requestBody = createUploadRequestBody(
-      fileContent,
-      metadata,
+      encrypted.encrypted_file_content,
+      encrypted.encrypted_metadata,
       testUser,
-      testUserKeyBundle,
-      "emptynonce"
+      testUserKeyBundle
     );
     const response = await makeAuthenticatedUploadRequest(requestBody);
     await expectBadRequest(response);

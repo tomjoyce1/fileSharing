@@ -2,10 +2,11 @@ import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { filesTable } from "~/db/schema";
-import { createHash, verify, randomUUID } from "node:crypto";
+import { verify, randomUUID } from "node:crypto";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { deserializeKeyBundlePublic } from "~/utils/crypto/KeyHelper";
+import { createFileSignature } from "~/utils/crypto/FileEncryption";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -18,8 +19,7 @@ export const schema = {
     body: z
       .object({
         file_content: z.string().min(1, "File content is required"),
-        metadata_payload: z.string().min(1, "Metadata payload is required"),
-        metadata_payload_nonce: z.string().min(1, "Metadata nonce is required"),
+        metadata: z.string().min(1, "Metadata payload is required"),
         pre_quantum_signature: z
           .string()
           .min(1, "Pre-quantum signature is required"),
@@ -87,18 +87,14 @@ function cleanupFile(storage_path: string): void {
 
 function verifyFileSignatures(
   user_id: number,
-  metadata_payload: string,
+  file_content: string,
+  metadata: string,
   pre_quantum_signature: string,
   post_quantum_signature: string,
   userPublicBundle: KeyBundlePublic
 ): Result<void, string> {
   try {
-    const metadataBuffer = Buffer.from(metadata_payload, "base64");
-    const metadataHash = createHash("sha256")
-      .update(metadataBuffer)
-      .digest("hex");
-
-    const dataToSign = `${user_id}|${metadataHash}`;
+    const dataToSign = createFileSignature(user_id, file_content, metadata);
 
     const preQuantumValid = verify(
       null,
@@ -127,23 +123,28 @@ async function insertFileRecord(
   user_id: number,
   storage_path: string,
   metadata_payload: string,
-  metadata_payload_nonce: string,
   pre_quantum_signature: string,
   post_quantum_signature: string
-): Promise<Result<void, string>> {
+): Promise<Result<number, string>> {
   try {
     const metadataBuffer = Buffer.from(metadata_payload, "base64");
 
-    await db.insert(filesTable).values({
-      owner_user_id: user_id,
-      storage_path,
-      metadata_payload: metadataBuffer,
-      metadata_payload_nonce: Buffer.from(metadata_payload_nonce, "base64"),
-      pre_quantum_signature: Buffer.from(pre_quantum_signature, "base64"),
-      post_quantum_signature: Buffer.from(post_quantum_signature, "base64"),
-    });
+    const result = await db
+      .insert(filesTable)
+      .values({
+        owner_user_id: user_id,
+        storage_path,
+        metadata: metadataBuffer,
+        pre_quantum_signature: Buffer.from(pre_quantum_signature, "base64"),
+        post_quantum_signature: Buffer.from(post_quantum_signature, "base64"),
+      })
+      .returning({ file_id: filesTable.file_id });
 
-    return ok(undefined);
+    if (!result[0]) {
+      return err("Failed to create file record");
+    }
+
+    return ok(result[0].file_id);
   } catch (error) {
     return err("Database Internal Error");
   }
@@ -158,8 +159,7 @@ export async function POST(
 
   const {
     file_content,
-    metadata_payload,
-    metadata_payload_nonce,
+    metadata,
     pre_quantum_signature,
     post_quantum_signature,
   } = req.validated.body;
@@ -187,7 +187,8 @@ export async function POST(
 
   const signatureResult = verifyFileSignatures(
     user.user_id,
-    metadata_payload,
+    file_content,
+    metadata,
     pre_quantum_signature,
     post_quantum_signature,
     userPublicBundle
@@ -209,8 +210,7 @@ export async function POST(
   const insertResult = await insertFileRecord(
     user.user_id,
     storage_path,
-    metadata_payload,
-    metadata_payload_nonce,
+    metadata,
     pre_quantum_signature,
     post_quantum_signature
   );
@@ -225,6 +225,7 @@ export async function POST(
   return Response.json(
     {
       message: "File uploaded successfully",
+      file_id: insertResult.value,
     },
     { status: 201 }
   );

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
-import { filesTable, sharedAccessTable } from "~/db/schema";
+import { filesTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
@@ -20,12 +20,12 @@ export const schema = {
   },
 };
 
-async function checkFileAccess(
+async function checkFileOwnership(
   user_id: number,
   file_id: number
-): Promise<Result<{ file: any; sharedAccess?: any }, string>> {
+): Promise<Result<any, string>> {
   try {
-    // check if owner
+    // Check if user owns the file
     const fileRecord = await db
       .select()
       .from(filesTable)
@@ -38,34 +38,11 @@ async function checkFileAccess(
       .limit(1)
       .then((rows) => rows[0]);
 
-    if (fileRecord) {
-      return ok({ file: fileRecord });
-    }
-
-    // if not owner, check if user has shared access
-    const sharedAccessRecord = await db
-      .select({
-        file: filesTable,
-        sharedAccess: sharedAccessTable,
-      })
-      .from(sharedAccessTable)
-      .innerJoin(filesTable, eq(sharedAccessTable.file_id, filesTable.file_id))
-      .where(
-        and(
-          eq(sharedAccessTable.file_id, file_id),
-          eq(sharedAccessTable.shared_with_user_id, user_id)
-        )
-      )
-      .limit(1)
-      .then((rows) => rows[0]);
-    if (!sharedAccessRecord) {
+    if (!fileRecord) {
       return err("File not found or access denied");
     }
 
-    return ok({
-      file: sharedAccessRecord.file,
-      sharedAccess: sharedAccessRecord.sharedAccess,
-    });
+    return ok(fileRecord);
   } catch (error) {
     return err("Database error");
   }
@@ -106,15 +83,15 @@ export async function POST(
 
   const user = userResult.value;
 
-  // Check if user has access to the file
-  const accessResult = await checkFileAccess(user.user_id, file_id);
-  if (accessResult.isErr()) {
+  // Check if user owns the file
+  const fileResult = await checkFileOwnership(user.user_id, file_id);
+  if (fileResult.isErr()) {
     return Response.json({ message: "File not found" }, { status: 404 });
   }
 
-  const { file, sharedAccess } = accessResult.value;
+  const file = fileResult.value;
 
-  // read file content from disk
+  // Read file content from disk
   const fileContentResult = readFileContent(file.storage_path);
   if (fileContentResult.isErr()) {
     return Response.json({ message: "Internal Server Error" }, { status: 500 });
@@ -122,22 +99,10 @@ export async function POST(
 
   const fileContent = fileContentResult.value;
 
-  // prepare response data
-  const responseData: any = {
-    file_content: fileContent,
-  };
-
-  // If this is shared access, include the shared access data for decryption
-  if (sharedAccess) {
-    responseData.shared_access = {
-      encrypted_fek: sharedAccess.encrypted_fek.toString("base64"),
-      encrypted_fek_nonce: sharedAccess.encrypted_fek_nonce.toString("base64"),
-      pre_quantum_secret_part:
-        sharedAccess.pre_quantum_secret_part.toString("base64"),
-      post_quantum_secret_part:
-        sharedAccess.post_quantum_secret_part.toString("base64"),
-    };
-  }
-
-  return Response.json(responseData, { status: 200 });
+  return Response.json(
+    {
+      file_content: fileContent,
+    },
+    { status: 200 }
+  );
 }
