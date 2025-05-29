@@ -43,16 +43,16 @@ export function createEncryptedFileContent(
 }
 
 export function createFileSignatures(
-  file_content: string,
-  metadata: string,
+  encrypted_file_content: string,
+  encrypted_metadata: string,
   testUser: any,
   testUserKeyBundle: any,
   useBadSignature = false
 ) {
   const dataToSign = createFileSignature(
     testUser.user_id,
-    file_content,
-    metadata
+    encrypted_file_content,
+    encrypted_metadata
   );
 
   const preQuantumSignature = nodeSign(
@@ -75,14 +75,14 @@ export function createFileSignatures(
 }
 
 export function createUploadRequestBody(
-  fileContent: string,
+  encrypted_file_content: string,
   encrypted_metadata: string,
   testUser: any,
   testUserKeyBundle: any,
   useBadSignature = false
 ) {
   const signatures = createFileSignatures(
-    fileContent,
+    encrypted_file_content,
     encrypted_metadata,
     testUser,
     testUserKeyBundle,
@@ -90,7 +90,7 @@ export function createUploadRequestBody(
   );
 
   return {
-    file_content: fileContent,
+    file_content: encrypted_file_content,
     metadata: encrypted_metadata,
     ...signatures,
   };
@@ -133,6 +133,40 @@ export function verifyFileSignatures(
 
     const postQuantumValid = ml_dsa87.verify(
       userPublicBundle.postQuantum.identitySigningPublicKey,
+      Buffer.from(dataToSign),
+      Buffer.from(post_quantum_signature, "base64")
+    );
+
+    return preQuantumValid && postQuantumValid;
+  } catch (error) {
+    return false;
+  }
+}
+
+export function verifyDownloadedFileSignatures(
+  file_content: string,
+  pre_quantum_signature: string,
+  post_quantum_signature: string,
+  testUser: any,
+  testUserKeyBundle: any,
+  encrypted_metadata: string
+): boolean {
+  try {
+    const dataToSign = createFileSignature(
+      testUser.user_id,
+      file_content,
+      encrypted_metadata
+    );
+
+    const preQuantumValid = verify(
+      null,
+      Buffer.from(dataToSign),
+      testUserKeyBundle.public.preQuantum.identitySigningPublicKey,
+      Buffer.from(pre_quantum_signature, "base64")
+    );
+
+    const postQuantumValid = ml_dsa87.verify(
+      testUserKeyBundle.public.postQuantum.identitySigningPublicKey,
       Buffer.from(dataToSign),
       Buffer.from(post_quantum_signature, "base64")
     );
