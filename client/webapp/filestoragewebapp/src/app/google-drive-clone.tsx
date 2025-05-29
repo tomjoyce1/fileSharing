@@ -1,6 +1,6 @@
 "use client";
-// main homepage and layout
-import { useState, useRef } from "react";
+
+import { useState, useRef, useEffect } from "react";
 import {
   ChevronRight,
   Upload,
@@ -14,6 +14,17 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { mockData, FileItem, FolderItem, DriveItem } from "./mockdata";
 import DriveList from "../components/DriveList";
+import {
+  generateFEKComponents,
+  deriveFEK,
+  deriveMEK,
+  encryptFileBuffer,
+  encryptMetadataWithFEK,
+  signFileRecordEd25519,
+  decryptFileBuffer,
+} from "~/lib/crypto/encryptor";
+
+import sodium from "libsodium-wrappers";
 
 export default function GoogleDriveClone() {
   const [currentPath, setCurrentPath] = useState<string[]>(["root"]);
@@ -22,7 +33,10 @@ export default function GoogleDriveClone() {
 
   const [, forceUpdate] = useState({});
 
-  // Get current folder based on path
+  useEffect(() => {
+    sodium.ready;
+  }, []);
+
   const getCurrentFolder = (): FolderItem => {
     let current: any = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
@@ -36,62 +50,116 @@ export default function GoogleDriveClone() {
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-
     const reader = new FileReader();
+
     if (file) {
-      console.log("Selected", file.name);
       reader.onload = async (e) => {
         if (!e.target || !e.target.result) return;
-        const arrayBuffer = e.target.result;
-        // encrypt with aesgcm
-        // 2 - do signing
+        const arrayBuffer = e.target.result as ArrayBuffer;
 
-        // Create a Blob URL for the file contents
-        const blob = new Blob([arrayBuffer], { type: file.type });
+        await sodium.ready;
+
+        const fileId = file.name + Date.now();
+        const { s_pre, s_post } = await generateFEKComponents();
+        const fek = await deriveFEK(s_pre, s_post);
+        const { encryptedData, nonce } = await encryptFileBuffer(
+          fek,
+          arrayBuffer,
+        );
+        const blob = new Blob([encryptedData], { type: file.type });
         const fileUrl = URL.createObjectURL(blob);
 
-        // Infer fileType for your FileItem type
-        let fileType: FileItem["fileType"] = "document";
-        if (file.type.startsWith("image")) fileType = "image";
-        else if (file.type.startsWith("audio")) fileType = "audio";
-        else if (file.type.startsWith("video")) fileType = "video";
-        else if (file.type === "application/pdf") fileType = "pdf";
+        const fileType: FileItem["fileType"] = file.type.startsWith("image")
+          ? "image"
+          : file.type.startsWith("audio")
+            ? "audio"
+            : file.type.startsWith("video")
+              ? "video"
+              : file.type === "application/pdf"
+                ? "pdf"
+                : "document";
+
+        localStorage.setItem(
+          `fek_${fileId}_s_pre`,
+          JSON.stringify(Array.from(s_pre)),
+        );
+        localStorage.setItem(
+          `fek_${fileId}_s_post`,
+          JSON.stringify(Array.from(s_post)),
+        );
+        localStorage.setItem(
+          `fek_${fileId}_nonce`,
+          JSON.stringify(Array.from(nonce)),
+        );
+
+        // --- Metadata encryption
+        const metadata = {
+          original_filename: file.name,
+          file_size_bytes: file.size,
+          file_type: file.type,
+          content_hash: Array.from(
+            new Uint8Array(
+              await crypto.subtle.digest("SHA-256", encryptedData),
+            ),
+          ),
+        };
+        const { encryptedMetadata, nonce: metadataNonce } =
+          await encryptMetadataWithFEK(fek, metadata);
+
+        localStorage.setItem(
+          `fek_${fileId}_metadata`,
+          JSON.stringify(Array.from(encryptedMetadata)),
+        );
+        localStorage.setItem(
+          `fek_${fileId}_metadata_nonce`,
+          JSON.stringify(Array.from(metadataNonce)),
+        );
+
+        // --- Signature (Ed25519 via libsodium)
+
+        const { signature, dataToSign } = await signFileRecordEd25519(
+          fileId,
+          "alice",
+          fileUrl,
+          encryptedMetadata,
+          keypair.privateKey,
+        );
 
         const newFile: FileItem = {
-          id: file.name + Date.now(),
+          id: fileId,
           name: file.name,
           type: "file",
           fileType,
           size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
           modified: "just now",
           url: fileUrl,
+          encrypted: true,
+          nonce: nonce,
         };
 
-        // Add to mockdata
         const folder = getCurrentFolder();
         folder.children.push(newFile);
         forceUpdate({});
       };
+
       reader.readAsArrayBuffer(file);
     }
   };
+
   const handleUpload = () => {
     fileInputRef.current?.click();
   };
 
   const currentFolder = getCurrentFolder();
 
-  // Navigate to folder
-  const navigateToFolder = (folderId: string, folderName: string) => {
+  const navigateToFolder = (folderId: string) => {
     setCurrentPath([...currentPath, folderId]);
   };
 
-  // Navigate via breadcrumb
   const navigateToBreadcrumb = (index: number) => {
     setCurrentPath(currentPath.slice(0, index + 1));
   };
 
-  // Get breadcrumb names
   const getBreadcrumbNames = (): string[] => {
     const names = ["My Drive"];
     let current: any = mockData.root;
@@ -106,9 +174,9 @@ export default function GoogleDriveClone() {
     }
     return names;
   };
+
   const breadcrumbNames = getBreadcrumbNames();
 
-  // Get file icon
   const getFileIcon = (fileType: string) => {
     switch (fileType) {
       case "image":
@@ -125,14 +193,10 @@ export default function GoogleDriveClone() {
     }
   };
 
-  // Delete handler for DriveList
   const handleDelete = (item: DriveItem) => {
-    // Find the current folder
     const folder = getCurrentFolder();
-    // Remove the item from the children array
     const index = folder.children.findIndex((child) => child.id === item.id);
     if (index !== -1) {
-      // If the file is a blob, revoke the object URL to free memory
       if (item.type === "file" && item.url && item.url.startsWith("blob:")) {
         URL.revokeObjectURL(item.url);
       }
@@ -141,7 +205,6 @@ export default function GoogleDriveClone() {
     }
   };
 
-  // Rename handler for DriveList
   const handleRename = (item: DriveItem) => {
     const newName = prompt("Enter new name", item.name);
     if (newName && newName !== item.name) {
@@ -151,19 +214,46 @@ export default function GoogleDriveClone() {
     return item;
   };
 
-  // Filter items based on search
+  const handleFileOpen = async (file: FileItem) => {
+    if (!file.encrypted || !file.url) {
+      window.open(file.url, "_blank");
+      return;
+    }
+
+    const response = await fetch(file.url);
+    const encryptedArrayBuffer = await response.arrayBuffer();
+
+    const s_pre = new Uint8Array(
+      JSON.parse(localStorage.getItem(`fek_${file.id}_s_pre`) || "[]"),
+    );
+    const s_post = new Uint8Array(
+      JSON.parse(localStorage.getItem(`fek_${file.id}_s_post`) || "[]"),
+    );
+    const nonce = new Uint8Array(
+      JSON.parse(localStorage.getItem(`fek_${file.id}_nonce`) || "[]"),
+    );
+    const fek = await deriveFEK(s_pre, s_post);
+
+    const decryptedBuffer = await decryptFileBuffer(
+      fek,
+      encryptedArrayBuffer,
+      nonce,
+    );
+    const blob = new Blob([decryptedBuffer]);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+  };
+
   const filteredItems = currentFolder.children.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
-      {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-900/60">
         <div className="flex h-16 items-center px-6">
           <div className="flex flex-1 items-center space-x-4">
             <h1 className="text-xl font-semibold text-white">Drive</h1>
-            {/* Search */}
             <div className="max-w-md flex-1">
               <Input
                 type="search"
@@ -174,7 +264,6 @@ export default function GoogleDriveClone() {
               />
             </div>
           </div>
-          {/* Upload Button */}
           <Button
             onClick={handleUpload}
             className="bg-blue-600 hover:bg-blue-700"
@@ -189,7 +278,6 @@ export default function GoogleDriveClone() {
             className="hidden"
           />
         </div>
-        {/* Breadcrumbs */}
         <div className="border-t border-gray-800 px-6 py-3">
           <nav className="flex items-center space-x-1 text-sm">
             {breadcrumbNames.map((name, index) => (
@@ -212,7 +300,6 @@ export default function GoogleDriveClone() {
           </nav>
         </div>
       </header>
-      {/* Main Content */}
       <main className="p-6">
         <div className="space-y-4">
           <DriveList
@@ -221,6 +308,7 @@ export default function GoogleDriveClone() {
             getFileIcon={getFileIcon}
             onDelete={handleDelete}
             onRename={handleRename}
+            onFileOpen={handleFileOpen}
           />
         </div>
       </main>

@@ -8,6 +8,8 @@ export type FileItem = {
   size: string;
   modified: string;
   url: string;
+  encrypted?: boolean;
+  nonce?: Uint8Array;
 };
 
 export type FolderItem = {

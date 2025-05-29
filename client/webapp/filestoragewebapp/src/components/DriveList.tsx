@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { FileItem, FolderItem, DriveItem } from "./mockData";
+import type { FileItem, FolderItem, DriveItem } from "../app/mockData";
 
 type Props = {
   items: DriveItem[];
@@ -28,6 +28,7 @@ type Props = {
   getFileIcon: (fileType: string) => React.ReactNode;
   onDelete: (item: DriveItem) => void;
   onRename: (item: DriveItem) => DriveItem;
+  onFileOpen: (file: FileItem) => Promise<void>;
 };
 
 const handleShare = (item) => {
@@ -40,6 +41,7 @@ export default function DriveList({
   getFileIcon,
   onDelete,
   onRename,
+  onFileOpen,
 }: Props) {
   const handleDelete = (item) => {
     if (window.confirm(`Delete "${item.name}"?`)) {
@@ -75,6 +77,7 @@ export default function DriveList({
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800">
       {/* List Header */}
+
       <div className="grid grid-cols-12 gap-4 border-b border-gray-700 p-4 text-sm font-medium text-gray-400">
         <div className="col-span-6">Name</div>
         <div className="col-span-2">Size</div>
@@ -108,14 +111,18 @@ export default function DriveList({
                     {item.name}
                   </button>
                 ) : (
-                  <a
-                    href={(item as FileItem).url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="truncate text-left transition-colors hover:text-blue-400"
+                  <button
+                    onClick={() => onFileOpen(item as FileItem)}
+                    className="w-full cursor-pointer truncate border-none bg-transparent text-left text-inherit transition-colors outline-none hover:text-blue-400"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      margin: 0,
+                    }}
                   >
                     {item.name}
-                  </a>
+                  </button>
                 )}
               </div>
               {/* Size */}
