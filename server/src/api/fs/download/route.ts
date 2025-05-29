@@ -25,9 +25,13 @@ async function checkFileOwnership(
   file_id: number
 ): Promise<Result<any, string>> {
   try {
-    // Check if user owns the file
     const fileRecord = await db
-      .select()
+      .select({
+        file_id: filesTable.file_id,
+        storage_path: filesTable.storage_path,
+        pre_quantum_signature: filesTable.pre_quantum_signature,
+        post_quantum_signature: filesTable.post_quantum_signature,
+      })
       .from(filesTable)
       .where(
         and(
@@ -98,10 +102,11 @@ export async function POST(
   }
 
   const fileContent = fileContentResult.value;
-
   return Response.json(
     {
       file_content: fileContent,
+      pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
+      post_quantum_signature: file.post_quantum_signature.toString("base64"),
     },
     { status: 200 }
   );

@@ -98,14 +98,6 @@ export const sharedAccessTable = sqliteTable(
       mode: "buffer",
     }).notNull(),
 
-    // signatures
-    pre_quantum_signature: blob("pre_quantum_signature", {
-      mode: "buffer",
-    }).notNull(),
-    post_quantum_signature: blob("post_quantum_signature", {
-      mode: "buffer",
-    }).notNull(),
-
     shared_at: integer("shared_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(strftime('%s', 'now'))`),

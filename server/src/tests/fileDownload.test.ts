@@ -24,6 +24,7 @@ import {
   downloadFile,
   makeAuthenticatedPOST,
   decryptDownloadedContent,
+  verifyDownloadedFileSignatures,
 } from "./fileTestUtils";
 
 let mockDbModule: any;
@@ -56,7 +57,6 @@ describe("File Download API", () => {
   afterEach(() => {
     cleanupEncryptedDrive();
   });
-
   test("successful file download and content verification", async () => {
     const originalContent = "test file content for download";
     const originalMetadata = {
@@ -87,6 +87,18 @@ describe("File Download API", () => {
     expect(responseData.file_content).toBe(
       uploadResult.test_data.encrypted_file_content
     );
+    expect(responseData.pre_quantum_signature).toBeDefined();
+    expect(responseData.post_quantum_signature).toBeDefined();
+
+    const signaturesValid = verifyDownloadedFileSignatures(
+      responseData.file_content,
+      responseData.pre_quantum_signature,
+      responseData.post_quantum_signature,
+      testUser,
+      testUserKeyBundle,
+      uploadResult.test_data.encrypted_metadata
+    );
+    expect(signaturesValid).toBe(true);
 
     // Decrypt and verify the actual file content
     const decryptedFileContent = decryptDownloadedContent(
@@ -95,7 +107,6 @@ describe("File Download API", () => {
     );
     expect(decryptedFileContent).toBe(originalContent);
   });
-
   test("large file download (5MB)", async () => {
     const sizeInMB = 5;
     const sizeInBytes = sizeInMB * 1024 * 1024;
@@ -127,6 +138,18 @@ describe("File Download API", () => {
     expect(responseData.file_content).toBe(
       uploadResult.test_data.encrypted_file_content
     );
+    expect(responseData.pre_quantum_signature).toBeDefined();
+    expect(responseData.post_quantum_signature).toBeDefined();
+
+    const signaturesValid = verifyDownloadedFileSignatures(
+      responseData.file_content,
+      responseData.pre_quantum_signature,
+      responseData.post_quantum_signature,
+      testUser,
+      testUserKeyBundle,
+      uploadResult.test_data.encrypted_metadata
+    );
+    expect(signaturesValid).toBe(true);
 
     // verify the content length is correct for 5MB
     const decryptedContent = decryptDownloadedContent(
@@ -174,6 +197,53 @@ describe("File Download API", () => {
     ).toString();
     expect(downloadedContent).toBe("tampered content");
     expect(downloadedContent).not.toBe(originalContent);
+  });
+
+  test("download detects file signature mismatch when file is tampered", async () => {
+    const originalContent = "original content for signature test";
+
+    const uploadResult = await uploadTestFile(
+      testUser,
+      testUserKeyBundle,
+      serverUrl,
+      originalContent
+    );
+
+    // tamper with the file on disk
+    const fileRecord = await testDb
+      .select()
+      .from(filesTable)
+      .where(eq(filesTable.file_id, uploadResult.file_id))
+      .then((rows: any[]) => rows[0]);
+    const storagePath = fileRecord.storage_path;
+    const tamperedContent = Buffer.from("tampered content");
+    writeFileSync(storagePath, tamperedContent);
+
+    // download the file
+    const response = await downloadFile(
+      uploadResult.file_id,
+      testUser,
+      testUserKeyBundle,
+      serverUrl
+    );
+    expect(response.status).toBe(200);
+
+    const responseData = (await response.json()) as any;
+
+    // the file content will be the tampered content now
+    const tamperedBase64 = tamperedContent.toString("base64");
+    expect(responseData.file_content).toBe(tamperedBase64);
+
+    // but signatures should not match because the file was tampered with
+    const signaturesValid = verifyDownloadedFileSignatures(
+      responseData.file_content,
+      responseData.pre_quantum_signature,
+      responseData.post_quantum_signature,
+      testUser,
+      testUserKeyBundle,
+      uploadResult.test_data.encrypted_metadata
+    );
+    expect(signaturesValid).toBe(false);
   });
 
   test("file not found", async () => {
@@ -245,7 +315,6 @@ describe("File Download API", () => {
     const responseData = (await response.json()) as any;
     expect(responseData.message).toBe("Internal Server Error");
   });
-
   test("multiple files download - content isolation", async () => {
     // Upload multiple files with different content
     const content1 = "first file content";
@@ -295,6 +364,25 @@ describe("File Download API", () => {
       uploadResult2.test_data.encrypted_file_content
     );
     expect(data1.file_content).not.toBe(data2.file_content);
+
+    const signatures1Valid = verifyDownloadedFileSignatures(
+      data1.file_content,
+      data1.pre_quantum_signature,
+      data1.post_quantum_signature,
+      testUser,
+      testUserKeyBundle,
+      uploadResult1.test_data.encrypted_metadata
+    );
+    const signatures2Valid = verifyDownloadedFileSignatures(
+      data2.file_content,
+      data2.pre_quantum_signature,
+      data2.post_quantum_signature,
+      testUser,
+      testUserKeyBundle,
+      uploadResult2.test_data.encrypted_metadata
+    );
+    expect(signatures1Valid).toBe(true);
+    expect(signatures2Valid).toBe(true);
 
     // Verify decryption works correctly for each
     const decrypted1 = decryptDownloadedContent(
