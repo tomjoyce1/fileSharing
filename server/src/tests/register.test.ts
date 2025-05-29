@@ -3,7 +3,7 @@ import {
   generateKeyBundle,
   serializeKeyBundlePublic,
 } from "~/utils/crypto/KeyHelper";
-import { POST } from "~/api/auth/register/route";
+import { POST } from "~/api/keyhandler/register/route";
 import { setupTestDb, testDb } from "./setup";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
