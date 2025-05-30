@@ -26,14 +26,22 @@ describe("File Sharing API", () => {
       uploadResult.test_data.client_data.mek
     );
     harness.expectSuccessfulResponse(shareResponse, 201);
-    await harness.expectResponseMessage(shareResponse, "File shared successfully");
+    await harness.expectResponseMessage(
+      shareResponse,
+      "File shared successfully"
+    );
 
     const keyBundleResponse = await harness.getUserKeyBundle("userA", "userB");
     harness.expectSuccessfulResponse(keyBundleResponse);
     const keyBundleData = (await keyBundleResponse.json()) as any;
-    const userAPublicKeyBundle = deserializeKeyBundlePublic(keyBundleData.key_bundle);
+    const userAPublicKeyBundle = deserializeKeyBundlePublic(
+      keyBundleData.key_bundle
+    );
 
-    const downloadResponse = await harness.downloadFile("userB", uploadResult.file_id);
+    const downloadResponse = await harness.downloadFile(
+      "userB",
+      uploadResult.file_id
+    );
     harness.expectSuccessfulResponse(downloadResponse);
 
     const downloadData = (await downloadResponse.json()) as any;
@@ -62,7 +70,7 @@ describe("File Sharing API", () => {
       uploadResult.test_data.encrypted_metadata,
       uploadResult.test_data.client_data
     );
-    expect(decryptedMetadata.filename).toBe(TestData.simpleFile.metadata.filename);
+    expect(decryptedMetadata.name).toBe(TestData.simpleFile.metadata.name);
   });
 
   test("file tampering detection", async () => {
@@ -102,7 +110,9 @@ describe("File Sharing API", () => {
     const keyBundleResponse = await harness.getUserKeyBundle("userA", "userB");
     harness.expectSuccessfulResponse(keyBundleResponse);
     const keyBundleData = (await keyBundleResponse.json()) as any;
-    const userAPublicKeyBundle = deserializeKeyBundlePublic(keyBundleData.key_bundle);
+    const userAPublicKeyBundle = deserializeKeyBundlePublic(
+      keyBundleData.key_bundle
+    );
 
     const tamperedBase64 = tamperedContent.toString("base64");
 
@@ -160,6 +170,7 @@ describe("File Sharing API", () => {
       uploadResult.test_data.encrypted_metadata,
       fileRecord.pre_quantum_signature.toString("base64"),
       fileRecord.post_quantum_signature.toString("base64"),
+      // @ts-expect-error: testing invalid key bundle
       fakeKeyBundle
     );
     expect(signaturesValid).toBe(false);
@@ -188,7 +199,10 @@ describe("File Sharing API", () => {
       uploadResult.test_data.client_data.mek
     );
     harness.expectBadRequest(shareResponse);
-    await harness.expectResponseMessage(shareResponse, "Cannot share file with self");
+    await harness.expectResponseMessage(
+      shareResponse,
+      "Cannot share file with self"
+    );
   });
 
   test("cannot share file you don't own", async () => {
@@ -231,7 +245,10 @@ describe("File Sharing API", () => {
       uploadResult.test_data.client_data.mek
     );
     harness.expectConflict(secondShareResponse);
-    await harness.expectResponseMessage(secondShareResponse, "File is already shared with this user");
+    await harness.expectResponseMessage(
+      secondShareResponse,
+      "File is already shared with this user"
+    );
   });
 
   test("shared files appear in user's file list", async () => {

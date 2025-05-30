@@ -490,7 +490,6 @@ export class TestHarness {
     return this.env.getUser(username);
   }
 
-  // Common assertion helpers
   expectSuccessfulResponse(response: Response, expectedStatus = 200): void {
     expect(response.status).toBe(expectedStatus);
   }
@@ -519,7 +518,6 @@ export class TestHarness {
     expect(data.message).toBe(expectedMessage);
   }
 
-  // File operation helpers
   async uploadFile(
     username: string,
     content?: string,
@@ -600,7 +598,6 @@ export class TestHarness {
     return this._fileHelper.decryptMetadata(encrypted_metadata, client_data);
   }
 
-  // Direct access to helpers for advanced use cases
   get fileHelper(): TestFileHelper {
     return this._fileHelper;
   }
@@ -609,13 +606,11 @@ export class TestHarness {
     return this._sharingHelper;
   }
 
-  // Access to server URL for raw requests
   get serverUrl(): string {
     return this.env.serverUrl;
   }
 }
 
-// Beautiful test harness setup function
 export function getTestHarness(): TestHarness {
   const harness = new TestHarness();
 
@@ -634,7 +629,6 @@ export function getTestHarness(): TestHarness {
   return harness;
 }
 
-// Common test data with strict typing
 export const TestData = {
   simpleFile: {
     content: "test file content",
@@ -669,7 +663,6 @@ export const TestData = {
   },
 } as const;
 
-// Common test scenarios with strict typing
 export const TestScenarios = {
   async createTwoUsersWithSharedFile(harness: TestHarness) {
     const userA = await harness.createUser("userA");
