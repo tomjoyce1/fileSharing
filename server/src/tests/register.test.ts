@@ -1,22 +1,15 @@
-import { expect, test, describe, beforeAll, afterAll, mock } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import {
   generateKeyBundle,
   serializeKeyBundlePublic,
 } from "~/utils/crypto/KeyHelper";
 import { POST } from "~/api/keyhandler/register/route";
-import { setupTestDb, testDb } from "./setup";
+import { getTestHarness, testDb } from "./setup";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 
 describe("Register API", () => {
-  beforeAll(async () => {
-    await setupTestDb();
-
-    // Mock the database module to use our test database
-    mock.module("~/db", () => ({
-      db: testDb,
-    }));
-  });
+  const harness = getTestHarness();
 
   test("register user works", async () => {
     const username = "testuser";
@@ -38,7 +31,7 @@ describe("Register API", () => {
     expect(response.status).toBe(201);
     expect(responseData.message).toBe("User registered");
 
-    // ensure user actually in DB
+    // Ensure user actually in DB
     const insertedUser = await testDb
       .select()
       .from(usersTable)
@@ -53,16 +46,14 @@ describe("Register API", () => {
 
   test("register user with duplicate username fails", async () => {
     const username = "duplicateuser";
+
+    // Create user first
+    await harness.createUser(username);
+
+    // Try to register the same username again
     const keyBundle = generateKeyBundle();
     const serializedPublicBundle = serializeKeyBundlePublic(keyBundle.public);
 
-    // add user to db
-    await testDb.insert(usersTable).values({
-      username,
-      public_key_bundle: Buffer.from(JSON.stringify(serializedPublicBundle)),
-    });
-
-    // try to register the same username again
     const mockRequest = {
       validated: {
         body: {

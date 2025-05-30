@@ -22,8 +22,6 @@ CREATE TABLE `shared_access_table` (
 	`encrypted_mek` blob NOT NULL,
 	`encrypted_mek_salt` blob NOT NULL,
 	`encrypted_mek_nonce` blob NOT NULL,
-	`pre_quantum_signature` blob NOT NULL,
-	`post_quantum_signature` blob NOT NULL,
 	`shared_at` integer DEFAULT (strftime('%s', 'now')) NOT NULL,
 	FOREIGN KEY (`owner_user_id`) REFERENCES `users_table`(`user_id`) ON UPDATE cascade ON DELETE cascade,
 	FOREIGN KEY (`shared_with_user_id`) REFERENCES `users_table`(`user_id`) ON UPDATE cascade ON DELETE cascade,

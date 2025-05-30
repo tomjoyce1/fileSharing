@@ -7,13 +7,13 @@ import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { deserializeKeyBundlePublic } from "./KeyHelper";
 
-const DEFAULT_BASE_URL = "http://localhost:3000";
+export const DEFAULT_BASE_URL = "http://localhost:3000";
 const REPLAY_ATTACK_WINDOW_MS = 60 * 1000;
 const SIGNATURE_DELIMITER = "||";
 
 type User = typeof usersTable.$inferSelect;
 
-function createCanonicalRequestString(
+export function createCanonicalRequestString(
   username: string,
   timestamp: string,
   method: string,
@@ -23,7 +23,7 @@ function createCanonicalRequestString(
   return `${username}|${timestamp}|${method}|${path}|${body}`;
 }
 
-function createSignatures(
+export function createSignatures(
   canonicalString: string,
   privateBundle: KeyBundlePrivate
 ): { preQuantum: string; postQuantum: string } {

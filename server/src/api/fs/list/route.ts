@@ -3,7 +3,7 @@ import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { filesTable, sharedAccessTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
-import type { FileMetadataListItem } from "~/utils/schema";
+import type { FileMetadataListItem, APIError } from "~/utils/schema";
 import { ok, err, Result } from "neverthrow";
 import { sql } from "drizzle-orm";
 
@@ -23,7 +23,7 @@ async function getAccessibleFiles(
   user_id: number,
   page: number
 ): Promise<
-  Result<{ files: FileMetadataListItem[]; hasNextPage: boolean }, string>
+  Result<{ files: FileMetadataListItem[]; hasNextPage: boolean }, APIError>
 > {
   try {
     const offset = (page - 1) * PAGE_SIZE;
@@ -113,7 +113,7 @@ async function getAccessibleFiles(
 
     return ok({ files: fileList, hasNextPage });
   } catch (error) {
-    return err("Database error");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
@@ -138,7 +138,11 @@ export async function POST(
   const user = userResult.value;
   const filesResult = await getAccessibleFiles(user.user_id, page);
   if (filesResult.isErr()) {
-    return Response.json({ message: "Internal Server Error" }, { status: 500 });
+    const apiError = filesResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   const { files, hasNextPage } = filesResult.value;
