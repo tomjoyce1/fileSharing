@@ -101,7 +101,6 @@ export const KeyBundlePublicSerializable = z
       identitySigningPublicKey: z.string(),
     }),
     postQuantum: z.object({
-      identityKemPublicKey: z.string(),
       identitySigningPublicKey: z.string(),
     }),
   })

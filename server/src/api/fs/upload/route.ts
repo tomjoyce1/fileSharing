@@ -110,7 +110,7 @@ function verifyFileSignatures(
     );
 
     if (!preQuantumValid || !postQuantumValid) {
-      return err({ message: "Invalid file signatures", status: 401 });
+      return err({ message: "Unauthorized", status: 401 });
     }
 
     return ok(undefined);

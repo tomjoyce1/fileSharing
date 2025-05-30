@@ -4,12 +4,10 @@ import {
   createPrivateKey,
   createPublicKey,
 } from "node:crypto";
-import { ml_kem1024 } from "@noble/post-quantum/ml-kem";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import type {
   KeyBundlePrivate,
   KeyBundlePublic,
-  KeyBundlePrivateSerializable,
   KeyBundlePublicSerializable,
 } from "../schema";
 import { z } from "zod";
@@ -29,9 +27,6 @@ export function generateKeyBundle(): {
     publicKeyEncoding: { type: "spki", format: "der" },
     privateKeyEncoding: { type: "pkcs8", format: "der" },
   });
-
-  // Generate post-quantum Kyber1024 key pair for KEM
-  const kyberKeyPair = ml_kem1024.keygen();
 
   // Generate post-quantum Dilithium87 key pair for signing
   const dilithiumKeyPair = ml_dsa87.keygen(new Uint8Array(randomBytes(32)));
@@ -70,10 +65,6 @@ export function generateKeyBundle(): {
       },
     },
     postQuantum: {
-      identityKem: {
-        publicKey: kyberKeyPair.publicKey,
-        privateKey: kyberKeyPair.secretKey,
-      },
       identitySigning: {
         publicKey: dilithiumKeyPair.publicKey,
         privateKey: dilithiumKeyPair.secretKey,
@@ -87,7 +78,6 @@ export function generateKeyBundle(): {
       identitySigningPublicKey: ed25519PublicKey,
     },
     postQuantum: {
-      identityKemPublicKey: kyberKeyPair.publicKey,
       identitySigningPublicKey: dilithiumKeyPair.publicKey,
     },
   };
@@ -111,9 +101,6 @@ export function serializeKeyBundlePublic(
         .toString("base64"),
     },
     postQuantum: {
-      identityKemPublicKey: Buffer.from(
-        bundle.postQuantum.identityKemPublicKey
-      ).toString("base64"),
       identitySigningPublicKey: Buffer.from(
         bundle.postQuantum.identitySigningPublicKey
       ).toString("base64"),
@@ -141,9 +128,6 @@ export function deserializeKeyBundlePublic(
       }),
     },
     postQuantum: {
-      identityKemPublicKey: new Uint8Array(
-        Buffer.from(serialized.postQuantum.identityKemPublicKey, "base64")
-      ),
       identitySigningPublicKey: new Uint8Array(
         Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
       ),

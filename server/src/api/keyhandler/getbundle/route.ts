@@ -31,7 +31,7 @@ async function getUserKeyBundle(
       .then((rows) => rows[0]);
 
     if (!user) {
-      return err({ message: "Internal Server Error", status: 500 });
+      return err({ message: "Invalid username", status: 400 });
     }
 
     const keyBundle = JSON.parse(user.public_key_bundle.toString());

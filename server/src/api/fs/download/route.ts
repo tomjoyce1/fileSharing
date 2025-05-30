@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
-import { filesTable } from "~/db/schema";
+import { filesTable, sharedAccessTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import type { APIError } from "~/utils/schema";
 
 export const schema = {
@@ -21,17 +21,19 @@ export const schema = {
   },
 };
 
-async function checkFileOwnership(
+async function getFileAccess(
   user_id: number,
   file_id: number
 ): Promise<Result<any, APIError>> {
   try {
-    const fileRecord = await db
+    // user owns file?
+    const ownedFile = await db
       .select({
         file_id: filesTable.file_id,
         storage_path: filesTable.storage_path,
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
+        owner_user_id: filesTable.owner_user_id,
       })
       .from(filesTable)
       .where(
@@ -43,11 +45,46 @@ async function checkFileOwnership(
       .limit(1)
       .then((rows) => rows[0]);
 
-    if (!fileRecord) {
-      return err({ message: "File not found", status: 404 });
+    if (ownedFile) {
+      return ok({
+        ...ownedFile,
+        is_owner: true,
+      });
     }
 
-    return ok(fileRecord);
+    // user has shared access?
+    const sharedFile = await db
+      .select({
+        file_id: filesTable.file_id,
+        storage_path: filesTable.storage_path,
+        pre_quantum_signature: filesTable.pre_quantum_signature,
+        post_quantum_signature: filesTable.post_quantum_signature,
+        owner_user_id: filesTable.owner_user_id,
+      })
+      .from(filesTable)
+      .innerJoin(
+        sharedAccessTable,
+        and(
+          eq(sharedAccessTable.file_id, filesTable.file_id),
+          eq(sharedAccessTable.shared_with_user_id, user_id)
+        )
+      )
+      .where(eq(filesTable.file_id, file_id))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (sharedFile) {
+      return ok({
+        file_id: sharedFile.file_id,
+        storage_path: sharedFile.storage_path,
+        pre_quantum_signature: sharedFile.pre_quantum_signature,
+        post_quantum_signature: sharedFile.post_quantum_signature,
+        owner_user_id: sharedFile.owner_user_id,
+        is_owner: false,
+      });
+    }
+
+    return err({ message: "File not found", status: 404 });
   } catch (error) {
     return err({ message: "Internal Server Error", status: 500 });
   }
@@ -88,8 +125,8 @@ export async function POST(
 
   const user = userResult.value;
 
-  // Check if user owns the file
-  const fileResult = await checkFileOwnership(user.user_id, file_id);
+  // check if user has access to the file (owned or shared)
+  const fileResult = await getFileAccess(user.user_id, file_id);
   if (fileResult.isErr()) {
     const apiError = fileResult.error;
     return Response.json(
@@ -116,6 +153,8 @@ export async function POST(
       file_content: fileContent,
       pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
       post_quantum_signature: file.post_quantum_signature.toString("base64"),
+      owner_user_id: file.owner_user_id,
+      is_owner: file.is_owner,
     },
     { status: 200 }
   );
