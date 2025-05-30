@@ -1,7 +1,6 @@
 // ~/lib/crypto/keyUtils.ts
 
 import sodium from "libsodium-wrappers";
-import argon2 from "argon2-browser";
 
 export async function openKeyDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -43,7 +42,12 @@ export async function deriveKeyFromPassword(
   password: string,
   salt: Uint8Array,
 ): Promise<CryptoKey> {
+  if (typeof window === "undefined") {
+    throw new Error("deriveKeyFromPassword must only be called client-side");
+  }
   await sodium.ready;
+  // Dynamically import argon2-browser only on client
+  const argon2 = (await import("argon2-browser")).default;
   // Argon2id parameters
   const argon2Params = {
     pass: password,
