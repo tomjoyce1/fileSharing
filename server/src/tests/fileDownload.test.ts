@@ -19,7 +19,6 @@ import { filesTable } from "~/db/schema";
 import { writeFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import {
-  createLargeFileContent,
   uploadTestFile,
   downloadFile,
   makeAuthenticatedPOST,

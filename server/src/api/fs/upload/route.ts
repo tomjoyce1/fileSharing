@@ -10,7 +10,7 @@ import { createFileSignature } from "~/utils/crypto/FileEncryption";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
-import type { KeyBundlePublic } from "~/utils/schema";
+import type { KeyBundlePublic, APIError } from "~/utils/schema";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -46,19 +46,19 @@ function generateUniqueStoragePath(): string {
 function writeFileContent(
   storage_path: string,
   file_content: string
-): Result<void, string> {
+): Result<void, APIError> {
   try {
     // Validate base64 format more strictly
     const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
     if (!base64Regex.test(file_content)) {
-      return err("File Write Error");
+      return err({ message: "File Write Error", status: 400 });
     }
 
     // Decode and re-encode to verify it's actually valid base64
     const decoded = Buffer.from(file_content, "base64");
     const reencoded = decoded.toString("base64");
     if (reencoded !== file_content) {
-      return err("File Write Error");
+      return err({ message: "File Write Error", status: 400 });
     }
 
     // Ensure the directory exists
@@ -70,7 +70,7 @@ function writeFileContent(
 
     return ok(undefined);
   } catch (error) {
-    return err("File Write Error");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
@@ -80,7 +80,7 @@ function cleanupFile(storage_path: string): void {
       unlinkSync(storage_path);
     }
   } catch (error) {
-    // Log error but don't throw - cleanup is best effort
+    // cleanup is best effort - just log
     console.error(`Failed to cleanup file ${storage_path}:`, error);
   }
 }
@@ -92,7 +92,7 @@ function verifyFileSignatures(
   pre_quantum_signature: string,
   post_quantum_signature: string,
   userPublicBundle: KeyBundlePublic
-): Result<void, string> {
+): Result<void, APIError> {
   try {
     const dataToSign = createFileSignature(user_id, file_content, metadata);
 
@@ -110,12 +110,12 @@ function verifyFileSignatures(
     );
 
     if (!preQuantumValid || !postQuantumValid) {
-      return err("Invalid file signatures");
+      return err({ message: "Invalid file signatures", status: 401 });
     }
 
     return ok(undefined);
   } catch (error) {
-    return err("Signature verification failed");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
@@ -125,7 +125,7 @@ async function insertFileRecord(
   metadata_payload: string,
   pre_quantum_signature: string,
   post_quantum_signature: string
-): Promise<Result<number, string>> {
+): Promise<Result<number, APIError>> {
   try {
     const metadataBuffer = Buffer.from(metadata_payload, "base64");
 
@@ -141,12 +141,12 @@ async function insertFileRecord(
       .returning({ file_id: filesTable.file_id });
 
     if (!result[0]) {
-      return err("Failed to create file record");
+      return err({ message: "Internal Server Error", status: 500 });
     }
 
     return ok(result[0].file_id);
   } catch (error) {
-    return err("Database Internal Error");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
@@ -195,7 +195,11 @@ export async function POST(
   );
 
   if (signatureResult.isErr()) {
-    return Response.json({ message: "Unauthorized" }, { status: 401 });
+    const apiError = signatureResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   // Generate unique storage path and write file to disk
@@ -203,7 +207,11 @@ export async function POST(
   const writeResult = writeFileContent(storage_path, file_content);
 
   if (writeResult.isErr()) {
-    return Response.json({ message: "File write error" }, { status: 500 });
+    const apiError = writeResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   // Insert file record into database
@@ -219,7 +227,11 @@ export async function POST(
     // Database failed, try cleanup the file we just wrote
     cleanupFile(storage_path);
 
-    return Response.json({ message: "Database error" }, { status: 500 });
+    const apiError = insertResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   return Response.json(

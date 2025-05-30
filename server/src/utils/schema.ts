@@ -67,6 +67,11 @@ export interface FileMetadataListItem {
   };
 }
 
+export interface APIError {
+  message: string;
+  status: number;
+}
+
 // Serializable versions for API/database (base64 strings)
 export const KeyBundlePrivateSerializable = z
   .object({

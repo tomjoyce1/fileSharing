@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Username } from "~/utils/schema";
+import { Username, type APIError } from "~/utils/schema";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { usersTable } from "~/db/schema";
@@ -19,7 +19,7 @@ export const schema = {
 
 async function getUserKeyBundle(
   username: string
-): Promise<Result<any, string>> {
+): Promise<Result<any, APIError>> {
   try {
     const user = await db
       .select({
@@ -31,25 +31,23 @@ async function getUserKeyBundle(
       .then((rows) => rows[0]);
 
     if (!user) {
-      return err("Invalid username");
+      return err({ message: "Internal Server Error", status: 500 });
     }
 
     const keyBundle = JSON.parse(user.public_key_bundle.toString());
     return ok(keyBundle);
   } catch (error) {
-    return err("Failed to retrieve key bundle");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
-  // Validation somehow was skipped
-  // (should not happen, but recommended by docs)
   if (!req.validated?.body) {
     return Response.json(
       {
-        message: "Internal Server Error - validation failed",
+        message: "Internal Server Error",
       },
       { status: 500 }
     );
@@ -69,11 +67,11 @@ export async function POST(
   const result = await getUserKeyBundle(username);
 
   if (result.isErr()) {
-    if (result.error === "Invalid username") {
-      return Response.json({ message: "Invalid username" }, { status: 400 });
-    }
-
-    return Response.json({ message: "Internal Server Error" }, { status: 500 });
+    const apiError = result.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   return Response.json(

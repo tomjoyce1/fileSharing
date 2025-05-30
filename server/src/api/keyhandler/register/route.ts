@@ -1,9 +1,13 @@
 import { z } from "zod";
-import { Username, KeyBundlePublicSerializable } from "~/utils/schema";
+import {
+  Username,
+  KeyBundlePublicSerializable,
+  type APIError,
+} from "~/utils/schema";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
 import { usersTable } from "~/db/schema";
-import { ok, err, ResultAsync, fromPromise } from "neverthrow";
+import { ok, err, Result } from "neverthrow";
 import { eq } from "drizzle-orm";
 
 export const schema = {
@@ -20,31 +24,27 @@ export const schema = {
 async function registerUser(
   username: string,
   key_bundle: z.infer<typeof KeyBundlePublicSerializable>
-): Promise<ResultAsync<void, Error>> {
-  const insertData = {
-    username,
-    public_key_bundle: Buffer.from(JSON.stringify(key_bundle)),
-  };
-  const result = await fromPromise(
-    db.insert(usersTable).values(insertData),
-    (e) => (e instanceof Error ? e : new Error(String(e)))
-  );
-  if (result.isErr()) {
-    return err(result.error);
-  }
+): Promise<Result<void, APIError>> {
+  try {
+    const insertData = {
+      username,
+      public_key_bundle: Buffer.from(JSON.stringify(key_bundle)),
+    };
 
-  return ok(undefined);
+    await db.insert(usersTable).values(insertData);
+    return ok(undefined);
+  } catch (error) {
+    return err({ message: "Internal Server Error", status: 500 });
+  }
 }
 
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
-  // Validation somehow was skipped
-  // (should not happen, but recommended by docs)
   if (!req.validated?.body) {
     return Response.json(
       {
-        message: "Internal Server Error wtf not valid",
+        message: "Internal Server Error",
       },
       { status: 500 }
     );
@@ -66,11 +66,10 @@ export async function POST(
 
   const registerResult = await registerUser(username, key_bundle);
   if (registerResult.isErr()) {
+    const apiError = registerResult.error;
     return Response.json(
-      {
-        message: "Internal Server Error",
-      },
-      { status: 500 }
+      { message: apiError.message },
+      { status: apiError.status }
     );
   }
 

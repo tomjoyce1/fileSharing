@@ -6,6 +6,7 @@ import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
 import { eq, and } from "drizzle-orm";
+import type { APIError } from "~/utils/schema";
 
 export const schema = {
   post: {
@@ -23,7 +24,7 @@ export const schema = {
 async function checkFileOwnership(
   user_id: number,
   file_id: number
-): Promise<Result<any, string>> {
+): Promise<Result<any, APIError>> {
   try {
     const fileRecord = await db
       .select({
@@ -43,19 +44,19 @@ async function checkFileOwnership(
       .then((rows) => rows[0]);
 
     if (!fileRecord) {
-      return err("File not found or access denied");
+      return err({ message: "File not found", status: 404 });
     }
 
     return ok(fileRecord);
   } catch (error) {
-    return err("Database error");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
-function readFileContent(storage_path: string): Result<string, string> {
+function readFileContent(storage_path: string): Result<string, APIError> {
   try {
     if (!existsSync(storage_path)) {
-      return err("File not found on disk");
+      return err({ message: "Internal Server Error", status: 500 });
     }
 
     const fileBuffer = readFileSync(storage_path);
@@ -63,7 +64,7 @@ function readFileContent(storage_path: string): Result<string, string> {
 
     return ok(base64Content);
   } catch (error) {
-    return err("File read error");
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
@@ -90,7 +91,11 @@ export async function POST(
   // Check if user owns the file
   const fileResult = await checkFileOwnership(user.user_id, file_id);
   if (fileResult.isErr()) {
-    return Response.json({ message: "File not found" }, { status: 404 });
+    const apiError = fileResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   const file = fileResult.value;
@@ -98,7 +103,11 @@ export async function POST(
   // Read file content from disk
   const fileContentResult = readFileContent(file.storage_path);
   if (fileContentResult.isErr()) {
-    return Response.json({ message: "Internal Server Error" }, { status: 500 });
+    const apiError = fileContentResult.error;
+    return Response.json(
+      { message: apiError.message },
+      { status: apiError.status }
+    );
   }
 
   const fileContent = fileContentResult.value;
