@@ -1,6 +1,4 @@
-// ~/lib/crypto/keyUtils.ts
-
-import sodium from "libsodium-wrappers";
+import argon2 from "argon2-browser";
 
 export async function openKeyDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -12,7 +10,7 @@ export async function openKeyDB(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(new Error(String(request.error)));
   });
 }
 
@@ -30,7 +28,7 @@ export async function getKeyFromIndexedDB(
   keyName: string,
 ): Promise<Uint8Array | null> {
   const db = await openKeyDB();
-  return new Promise((resolve, reject) => {
+  return new Promise<Uint8Array | null>((resolve, reject) => {
     const tx = db.transaction("keys", "readonly");
     const req = tx.objectStore("keys").get(keyName);
     req.onsuccess = () => resolve(req.result ?? null);
@@ -38,38 +36,76 @@ export async function getKeyFromIndexedDB(
   });
 }
 
+// ---- insert deriveKeyFromPassword ----
+
 export async function deriveKeyFromPassword(
   password: string,
   salt: Uint8Array,
 ): Promise<CryptoKey> {
-  if (typeof window === "undefined") {
-    throw new Error("deriveKeyFromPassword must only be called client-side");
+  // Defensive: ensure salt is Uint8Array and not base64 or string
+  if (!(salt instanceof Uint8Array)) {
+    throw new Error("Salt must be a Uint8Array, got: " + typeof salt);
   }
-  await sodium.ready;
-  // Dynamically import argon2-browser only on client
-  const argon2 = (await import("argon2-browser")).default;
-  // Argon2id parameters
-  // Convert salt Uint8Array to base64 string for argon2-browser
-  const saltBase64 = btoa(String.fromCharCode(...salt));
-  const argon2Params = {
+  // Defensive: check for accidental string salt
+  if (typeof salt === "string") {
+    throw new Error("Salt must not be a string");
+  }
+  // Defensive: check for accidental base64 salt
+  if (Array.isArray(salt)) {
+    throw new Error("Salt must not be an array");
+  }
+  // Defensive: check for accidental Buffer (Node.js)
+  if (typeof Buffer !== "undefined" && salt instanceof Buffer) {
+    throw new Error("Salt must not be a Buffer");
+  }
+  // Defensive: check for accidental object with atob method (browser base64)
+  if (
+    salt &&
+    typeof salt === "object" &&
+    typeof (salt as any).atob === "function"
+  ) {
+    throw new Error("Salt must not be a base64 object");
+  }
+  // Defensive: check for accidental stringified array
+  if (
+    typeof salt === "object" &&
+    salt !== null &&
+    salt.constructor === Object
+  ) {
+    throw new Error("Salt must not be a plain object");
+  }
+  // Log salt bytes for debugging
+  console.log("[deriveKeyFromPassword] password:", password);
+  console.log(
+    "[deriveKeyFromPassword] salt (Uint8Array):",
+    salt,
+    "length:",
+    salt.length,
+    "bytes:",
+    Array.from(salt),
+  );
+  // Derive a 256-bit (32-byte) key using Argon2id
+  const hashResult = await argon2.hash({
     pass: password,
-    salt: saltBase64,
+    salt,
     type: argon2.ArgonType.Argon2id,
-    hashLen: 32,
-    time: 3, // iterations
-    mem: 64 * 1024, // 64 MB
+    hashLen: 32, // 32 bytes = 256 bits for AES-256
+    time: 3, // Number of iterations (customize as needed)
+    mem: 65536, // Memory in KB (customize as needed, e.g., 64MB)
     parallelism: 1,
-    raw: true,
-  };
-  const argon2Result = await argon2.hash(argon2Params);
-  const keyMaterial = await crypto.subtle.importKey(
+    raw: true, // Get raw Uint8Array output
+  });
+  console.log("[deriveKeyFromPassword] argon2.hash result:", hashResult);
+  // Import the derived key into WebCrypto as an AES-GCM CryptoKey
+  const key = await crypto.subtle.importKey(
     "raw",
-    argon2Result.hash,
+    hashResult.hash,
     { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"],
   );
-  return keyMaterial;
+  console.log("[deriveKeyFromPassword] WebCrypto key:", key);
+  return key;
 }
 
 export async function decryptPrivateKey(
@@ -83,4 +119,9 @@ export async function decryptPrivateKey(
     await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher),
   );
   return plain;
+}
+
+// Helper: Convert Uint8Array to base64 string
+export function uint8ArrayToBase64(arr: Uint8Array): string {
+  return Buffer.from(arr).toString("base64");
 }

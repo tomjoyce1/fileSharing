@@ -19,7 +19,6 @@ import DriveList from "../components/DriveList";
 import {
   generateFEKComponents,
   deriveFEK,
-  deriveMEK,
   encryptFileBuffer,
   encryptMetadataWithFEK,
   signFileRecordEd25519,
@@ -33,11 +32,15 @@ export default function GoogleDriveClone() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, forceUpdate] = useState({});
 
+  const sodiumReady: Promise<void> = (
+    sodium as typeof import("libsodium-wrappers")
+  ).ready;
+
   useEffect(() => {
     void (async () => {
-      await sodium.ready;
+      await sodiumReady;
     })();
-  }, []);
+  }, [sodiumReady]);
 
   const getCurrentFolder = (): FolderItem => {
     let current: FolderItem | FileItem | undefined = mockData.root;
@@ -60,7 +63,7 @@ export default function GoogleDriveClone() {
     const reader = new FileReader();
     reader.onload = async (e) => {
       if (!e.target?.result) return;
-      await sodium.ready;
+      await sodiumReady;
 
       const arrayBuffer = e.target.result as ArrayBuffer;
       const fileId = file.name + Date.now();
@@ -119,7 +122,7 @@ export default function GoogleDriveClone() {
       );
 
       try {
-        const username = localStorage.getItem("drive_username") || "alice";
+        const username = localStorage.getItem("drive_username") ?? "alice";
         const edRaw = await getKeyFromIndexedDB(`${username}_ed25519_priv`);
         if (!edRaw)
           throw new Error("No Ed25519 key found. Please log in again.");
@@ -130,7 +133,7 @@ export default function GoogleDriveClone() {
 
         let password = localStorage.getItem("drive_password");
         if (!password) {
-          password = prompt("Enter your password to unlock your key:") || "";
+          password = prompt("Enter your password to unlock your key:") ?? "";
           localStorage.setItem("drive_password", password);
         }
 
@@ -250,13 +253,19 @@ export default function GoogleDriveClone() {
     const encryptedArrayBuffer = await response.arrayBuffer();
 
     const s_pre = new Uint8Array(
-      JSON.parse(localStorage.getItem(`fek_${file.id}_s_pre`) || "[]"),
+      JSON.parse(
+        localStorage.getItem(`fek_${file.id}_s_pre`) ?? "[]",
+      ) as number[],
     );
     const s_post = new Uint8Array(
-      JSON.parse(localStorage.getItem(`fek_${file.id}_s_post`) || "[]"),
+      JSON.parse(
+        localStorage.getItem(`fek_${file.id}_s_post`) ?? "[]",
+      ) as number[],
     );
     const nonce = new Uint8Array(
-      JSON.parse(localStorage.getItem(`fek_${file.id}_nonce`) || "[]"),
+      JSON.parse(
+        localStorage.getItem(`fek_${file.id}_nonce`) ?? "[]",
+      ) as number[],
     );
     const fek = await deriveFEK(s_pre, s_post);
 

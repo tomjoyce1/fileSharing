@@ -1,7 +1,7 @@
 declare module "argon2-browser" {
   interface Argon2Params {
     pass: string;
-    salt: string;
+    salt: string | Uint8Array; // <-- allow both
     type: number;
     hashLen: number;
     time: number;
@@ -22,8 +22,10 @@ declare module "argon2-browser" {
 
   function hash(params: Argon2Params): Promise<Argon2Result>;
 
-  export default {
+  // eslint-disable-next-line import/no-anonymous-default-export
+  const argon2Export = {
     hash,
     ArgonType,
   };
+  export default argon2Export;
 }
