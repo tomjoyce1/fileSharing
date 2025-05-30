@@ -22,7 +22,7 @@ export async function saveKeyToIndexedDB(keyName: string, keyData: Uint8Array) {
     const tx = db.transaction("keys", "readwrite");
     tx.objectStore("keys").put(keyData, keyName);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(new Error(String(tx.error)));
   });
 }
 
@@ -33,8 +33,8 @@ export async function getKeyFromIndexedDB(
   return new Promise((resolve, reject) => {
     const tx = db.transaction("keys", "readonly");
     const req = tx.objectStore("keys").get(keyName);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(new Error(String(req.error)));
   });
 }
 
@@ -49,9 +49,11 @@ export async function deriveKeyFromPassword(
   // Dynamically import argon2-browser only on client
   const argon2 = (await import("argon2-browser")).default;
   // Argon2id parameters
+  // Convert salt Uint8Array to base64 string for argon2-browser
+  const saltBase64 = btoa(String.fromCharCode(...salt));
   const argon2Params = {
     pass: password,
-    salt: salt,
+    salt: saltBase64,
     type: argon2.ArgonType.Argon2id,
     hashLen: 32,
     time: 3, // iterations

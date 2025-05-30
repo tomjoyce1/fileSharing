@@ -34,20 +34,21 @@ export default function GoogleDriveClone() {
   const [, forceUpdate] = useState({});
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       await sodium.ready;
     })();
   }, []);
 
   const getCurrentFolder = (): FolderItem => {
-    let current: any = mockData.root;
+    let current: FolderItem | FileItem | undefined = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
       const pathSegment = currentPath[i];
-      current = current?.children?.find(
-        (item: DriveItem) => item.id === pathSegment,
-      );
+      if (current && current.type === "folder") {
+        current = current.children.find((item) => item.id === pathSegment);
+      }
     }
-    return current || mockData.root;
+    if (!current || current.type !== "folder") return mockData.root;
+    return current;
   };
 
   const handleFileChange = async (
@@ -188,13 +189,13 @@ export default function GoogleDriveClone() {
 
   const getBreadcrumbNames = (): string[] => {
     const names = ["My Drive"];
-    let current: any = mockData.root;
+    let current: FolderItem | FileItem | undefined = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
       const pathSegment = currentPath[i];
-      current = current?.children?.find(
-        (item: DriveItem) => item.id === pathSegment,
-      );
-      if (current) names.push(current.name);
+      if (current && current.type === "folder") {
+        current = current.children.find((item) => item.id === pathSegment);
+        if (current) names.push(current.name);
+      }
     }
     return names;
   };
@@ -219,6 +220,7 @@ export default function GoogleDriveClone() {
 
   const handleDelete = (item: DriveItem) => {
     const folder = getCurrentFolder();
+    if (folder.type !== "folder") return;
     const index = folder.children.findIndex((child) => child.id === item.id);
     if (index !== -1) {
       if (item.type === "file" && item.url?.startsWith("blob:")) {
@@ -269,9 +271,12 @@ export default function GoogleDriveClone() {
   };
 
   const currentFolder = getCurrentFolder();
-  const filteredItems = currentFolder.children.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredItems =
+    currentFolder.type === "folder"
+      ? currentFolder.children.filter((item) =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()),
+        )
+      : [];
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">

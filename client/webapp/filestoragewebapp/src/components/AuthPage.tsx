@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import sodium from "libsodium-wrappers";
+import { Buffer } from "buffer";
 import {
   openKeyDB,
   saveKeyToIndexedDB,
@@ -12,32 +13,49 @@ import {
 // @ts-ignore
 // If you get a type error for libsodium-wrappers, add a .d.ts file or use @ts-ignore as above
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
 
-// Password-based encryption helpers
-async function deriveKeyFromPassword(
+export async function deriveKeyFromPassword(
   password: string,
   salt: Uint8Array,
 ): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await window.crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"],
-  );
-  return window.crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
+  if (typeof window === "undefined") {
+    throw new Error("deriveKeyFromPassword must only be called client-side");
+  }
+
+  const argon2 = (await import("argon2-browser")).default;
+
+  // Pass salt as Uint8Array directly (no base64 conversion)
+  const argon2Params = {
+    pass: password,
+    salt, // <-- pass Uint8Array directly
+    type: argon2.ArgonType.Argon2id,
+    hashLen: 32,
+    time: 3,
+    mem: 64 * 1024,
+    parallelism: 1,
+    raw: true,
+  };
+
+  const argon2Result = await argon2.hash(argon2Params);
+  console.log("argon2Result.hash type:", typeof argon2Result.hash);
+  console.log("argon2Result.hash:", argon2Result.hash);
+  // Defensive: handle both string and Uint8Array for hash
+  let hashBytes: Uint8Array;
+  if (typeof argon2Result.hash === "string") {
+    // If hash is base64 string, decode to Uint8Array
+    hashBytes = Uint8Array.from(atob(argon2Result.hash), (c) =>
+      c.charCodeAt(0),
+    );
+  } else {
+    hashBytes = argon2Result.hash;
+  }
+  return crypto.subtle.importKey("raw", hashBytes, { name: "AES-GCM" }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 async function encryptPrivateKey(
@@ -88,14 +106,15 @@ export default function AuthPage({
         setError("");
         setLoading(true);
         try {
+          console.log("[Register] Starting sodium");
           await sodium.ready;
-          // 1. Generate Ed25519 keypair
+
+          console.log("[Register] Generating keypairs...");
           const edKeypair = sodium.crypto_sign_keypair();
-          // 2. Generate X25519 keypair
           const x25519Keypair = sodium.crypto_kx_keypair();
-          // 3. Generate ML-DSA keypair (Dilithium replacement)
           const mldsaKeypair = await generateMLDSAKeypair();
-          // 4. Encrypt private keys with password
+
+          console.log("[Register] Encrypting private keys...");
           const edEncrypted = await encryptPrivateKey(
             edKeypair.privateKey,
             password,
@@ -108,7 +127,8 @@ export default function AuthPage({
             mldsaKeypair.privateKey,
             password,
           );
-          // 5. Store encrypted private keys in IndexedDB
+
+          console.log("[Register] Saving encrypted keys to IndexedDB...");
           await saveKeyToIndexedDB(
             `${username}_ed25519_priv`,
             new Uint8Array([
@@ -133,7 +153,8 @@ export default function AuthPage({
               ...mldsaEncrypted.cipher,
             ]),
           );
-          // 6. Prepare public key bundle (KeyHelper.ts style)
+
+          console.log("[Register] Constructing key_bundle...");
           const key_bundle = {
             preQuantum: {
               identityKemPublicKey: Array.from(x25519Keypair.publicKey),
@@ -143,24 +164,31 @@ export default function AuthPage({
               identitySigningPublicKey: Array.from(mldsaKeypair.publicKey),
             },
           };
-          // 7. Send to server
+          console.log("[Register] key_bundle:", key_bundle);
+
+          console.log("[Register] Sending registration request to server...");
           const res = await fetch("/api/keyhandler/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, key_bundle }),
           });
+
+          console.log("[Register] Server response status:", res.status);
           if (res.ok) {
             if (keepSignedIn) {
               localStorage.setItem("drive_username", username);
             }
             setLoading(false);
+            console.log("[Register] Success");
             onAuthSuccess(username);
           } else {
             const data = await res.json();
+            console.error("[Register] Server error:", data);
             setError(data.message || "Registration failed");
             setLoading(false);
           }
         } catch (err: any) {
+          console.error("[Register] Exception occurred:", err);
           setError("Registration error: " + err.message);
           setLoading(false);
         }
@@ -169,6 +197,7 @@ export default function AuthPage({
       }
       return;
     }
+
     if (mode === "login") {
       if (username.trim() && password.trim()) {
         setError("");

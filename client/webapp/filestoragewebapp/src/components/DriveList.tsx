@@ -7,11 +7,6 @@ import {
   Trash2,
   FolderPen,
   MoreVertical,
-  File,
-  ImageIcon,
-  FileText,
-  Music,
-  Video,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -20,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { FileItem, FolderItem, DriveItem } from "../app/mockData";
+import type { FileItem, DriveItem } from "../app/mockdata";
 
 type Props = {
   items: DriveItem[];
@@ -31,7 +26,7 @@ type Props = {
   onFileOpen: (file: FileItem) => Promise<void>;
 };
 
-const handleShare = (item) => {
+const handleShare = (item: DriveItem) => {
   alert(`Share "${item.name}" with username X.`);
 };
 
@@ -43,7 +38,7 @@ export default function DriveList({
   onRename,
   onFileOpen,
 }: Props) {
-  const handleDelete = (item) => {
+  const handleDelete = (item: DriveItem) => {
     if (window.confirm(`Delete "${item.name}"?`)) {
       onDelete(item);
     }
@@ -53,7 +48,7 @@ export default function DriveList({
     onRename(item);
   };
 
-  const handleDownload = async (item) => {
+  const handleDownload = async (item: FileItem) => {
     try {
       // Fetch the file as a blob
       const response = await fetch(item.url);
@@ -70,7 +65,7 @@ export default function DriveList({
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert("Failed to download file: " + error.message);
+      alert("Failed to download file: " + (error as Error).message);
     }
   };
 
@@ -101,7 +96,7 @@ export default function DriveList({
                 {item.type === "folder" ? (
                   <Folder className="h-5 w-5 flex-shrink-0 text-blue-400" />
                 ) : (
-                  getFileIcon((item as FileItem).fileType)
+                  getFileIcon(item.fileType)
                 )}
                 {item.type === "folder" ? (
                   <button
@@ -112,7 +107,7 @@ export default function DriveList({
                   </button>
                 ) : (
                   <button
-                    onClick={() => onFileOpen(item as FileItem)}
+                    onClick={() => onFileOpen(item)}
                     className="w-full cursor-pointer truncate border-none bg-transparent text-left text-inherit transition-colors outline-none hover:text-blue-400"
                     style={{
                       background: "none",
@@ -127,11 +122,11 @@ export default function DriveList({
               </div>
               {/* Size */}
               <div className="col-span-2 flex items-center text-sm text-gray-400">
-                {item.type === "file" ? (item as FileItem).size : "—"}
+                {item.type === "file" ? item.size : "—"}
               </div>
               {/* Modified */}
               <div className="col-span-3 flex items-center text-sm text-gray-400">
-                {item.type === "file" ? (item as FileItem).modified : "—"}
+                {item.type === "file" ? item.modified : "—"}
               </div>
               {/* Actions */}
               <div className="col-span-1 flex items-center justify-end">
