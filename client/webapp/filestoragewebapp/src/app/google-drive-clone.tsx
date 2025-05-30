@@ -10,9 +10,11 @@ import {
   Video,
   File,
 } from "lucide-react";
+import { getKeyFromIndexedDB, decryptPrivateKey } from "../lib/crypto/KeyUtils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { mockData, FileItem, FolderItem, DriveItem } from "./mockdata";
+import { mockData } from "./mockdata";
+import type { FileItem, FolderItem, DriveItem } from "./mockdata";
 import DriveList from "../components/DriveList";
 import {
   generateFEKComponents,
@@ -23,134 +25,158 @@ import {
   signFileRecordEd25519,
   decryptFileBuffer,
 } from "~/lib/crypto/encryptor";
-
 import sodium from "libsodium-wrappers";
 
 export default function GoogleDriveClone() {
   const [currentPath, setCurrentPath] = useState<string[]>(["root"]);
   const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [, forceUpdate] = useState({});
 
   useEffect(() => {
-    sodium.ready;
+    (async () => {
+      await sodium.ready;
+    })();
   }, []);
 
   const getCurrentFolder = (): FolderItem => {
     let current: any = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
       const pathSegment = currentPath[i];
-      current = current.children.find(
+      current = current?.children?.find(
         (item: DriveItem) => item.id === pathSegment,
       );
     }
-    return current;
+    return current || mockData.root;
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
+    if (!file) return;
+
     const reader = new FileReader();
+    reader.onload = async (e) => {
+      if (!e.target?.result) return;
+      await sodium.ready;
 
-    if (file) {
-      reader.onload = async (e) => {
-        if (!e.target || !e.target.result) return;
-        const arrayBuffer = e.target.result as ArrayBuffer;
+      const arrayBuffer = e.target.result as ArrayBuffer;
+      const fileId = file.name + Date.now();
 
-        await sodium.ready;
+      const { s_pre, s_post } = await generateFEKComponents();
+      const fek = await deriveFEK(s_pre, s_post);
+      const { encryptedData, nonce } = await encryptFileBuffer(
+        fek,
+        arrayBuffer,
+      );
+      const blob = new Blob([encryptedData], { type: file.type });
+      const fileUrl = URL.createObjectURL(blob);
 
-        const fileId = file.name + Date.now();
-        const { s_pre, s_post } = await generateFEKComponents();
-        const fek = await deriveFEK(s_pre, s_post);
-        const { encryptedData, nonce } = await encryptFileBuffer(
-          fek,
-          arrayBuffer,
+      const fileType: FileItem["fileType"] = file.type.startsWith("image")
+        ? "image"
+        : file.type.startsWith("audio")
+          ? "audio"
+          : file.type.startsWith("video")
+            ? "video"
+            : file.type === "application/pdf"
+              ? "pdf"
+              : "document";
+
+      // Save components
+      localStorage.setItem(
+        `fek_${fileId}_s_pre`,
+        JSON.stringify(Array.from(s_pre)),
+      );
+      localStorage.setItem(
+        `fek_${fileId}_s_post`,
+        JSON.stringify(Array.from(s_post)),
+      );
+      localStorage.setItem(
+        `fek_${fileId}_nonce`,
+        JSON.stringify(Array.from(nonce)),
+      );
+
+      const metadata = {
+        original_filename: file.name,
+        file_size_bytes: file.size,
+        file_type: file.type,
+        content_hash: Array.from(
+          new Uint8Array(await crypto.subtle.digest("SHA-256", encryptedData)),
+        ),
+      };
+
+      const { encryptedMetadata, nonce: metadataNonce } =
+        await encryptMetadataWithFEK(fek, metadata);
+      localStorage.setItem(
+        `fek_${fileId}_metadata`,
+        JSON.stringify(Array.from(encryptedMetadata)),
+      );
+      localStorage.setItem(
+        `fek_${fileId}_metadata_nonce`,
+        JSON.stringify(Array.from(metadataNonce)),
+      );
+
+      try {
+        const username = localStorage.getItem("drive_username") || "alice";
+        const edRaw = await getKeyFromIndexedDB(`${username}_ed25519_priv`);
+        if (!edRaw)
+          throw new Error("No Ed25519 key found. Please log in again.");
+
+        const edSalt = edRaw.slice(0, 16);
+        const edIv = edRaw.slice(16, 28);
+        const edCipher = edRaw.slice(28);
+
+        let password = localStorage.getItem("drive_password");
+        if (!password) {
+          password = prompt("Enter your password to unlock your key:") || "";
+          localStorage.setItem("drive_password", password);
+        }
+
+        const decrypted = await decryptPrivateKey(
+          edCipher,
+          password,
+          edSalt,
+          edIv,
         );
-        const blob = new Blob([encryptedData], { type: file.type });
-        const fileUrl = URL.createObjectURL(blob);
-
-        const fileType: FileItem["fileType"] = file.type.startsWith("image")
-          ? "image"
-          : file.type.startsWith("audio")
-            ? "audio"
-            : file.type.startsWith("video")
-              ? "video"
-              : file.type === "application/pdf"
-                ? "pdf"
-                : "document";
-
-        localStorage.setItem(
-          `fek_${fileId}_s_pre`,
-          JSON.stringify(Array.from(s_pre)),
-        );
-        localStorage.setItem(
-          `fek_${fileId}_s_post`,
-          JSON.stringify(Array.from(s_post)),
-        );
-        localStorage.setItem(
-          `fek_${fileId}_nonce`,
-          JSON.stringify(Array.from(nonce)),
-        );
-
-        // --- Metadata encryption
-        const metadata = {
-          original_filename: file.name,
-          file_size_bytes: file.size,
-          file_type: file.type,
-          content_hash: Array.from(
-            new Uint8Array(
-              await crypto.subtle.digest("SHA-256", encryptedData),
-            ),
-          ),
+        const keypair = {
+          publicKey: new Uint8Array([]), // not used in signing
+          privateKey: decrypted,
         };
-        const { encryptedMetadata, nonce: metadataNonce } =
-          await encryptMetadataWithFEK(fek, metadata);
 
-        localStorage.setItem(
-          `fek_${fileId}_metadata`,
-          JSON.stringify(Array.from(encryptedMetadata)),
-        );
-        localStorage.setItem(
-          `fek_${fileId}_metadata_nonce`,
-          JSON.stringify(Array.from(metadataNonce)),
-        );
-
-        // --- Signature (Ed25519 via libsodium)
-
-        const { signature, dataToSign } = await signFileRecordEd25519(
+        await signFileRecordEd25519(
           fileId,
-          "alice",
+          username,
           fileUrl,
           encryptedMetadata,
           keypair.privateKey,
         );
+      } catch (err) {
+        console.error("Error signing file:", err);
+        alert("Signature failed. Please re-authenticate.");
+      }
 
-        const newFile: FileItem = {
-          id: fileId,
-          name: file.name,
-          type: "file",
-          fileType,
-          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          modified: "just now",
-          url: fileUrl,
-          encrypted: true,
-          nonce: nonce,
-        };
-
-        const folder = getCurrentFolder();
-        folder.children.push(newFile);
-        forceUpdate({});
+      const newFile: FileItem = {
+        id: fileId,
+        name: file.name,
+        type: "file",
+        fileType,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        modified: "just now",
+        url: fileUrl,
+        encrypted: true,
+        nonce,
       };
 
-      reader.readAsArrayBuffer(file);
-    }
+      const folder = getCurrentFolder();
+      folder.children.push(newFile);
+      forceUpdate({});
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
-  const handleUpload = () => {
-    fileInputRef.current?.click();
-  };
-
-  const currentFolder = getCurrentFolder();
+  const handleUpload = () => fileInputRef.current?.click();
 
   const navigateToFolder = (folderId: string) => {
     setCurrentPath([...currentPath, folderId]);
@@ -165,12 +191,10 @@ export default function GoogleDriveClone() {
     let current: any = mockData.root;
     for (let i = 1; i < currentPath.length; i++) {
       const pathSegment = currentPath[i];
-      current = current.children.find(
+      current = current?.children?.find(
         (item: DriveItem) => item.id === pathSegment,
       );
-      if (current) {
-        names.push(current.name);
-      }
+      if (current) names.push(current.name);
     }
     return names;
   };
@@ -197,7 +221,7 @@ export default function GoogleDriveClone() {
     const folder = getCurrentFolder();
     const index = folder.children.findIndex((child) => child.id === item.id);
     if (index !== -1) {
-      if (item.type === "file" && item.url && item.url.startsWith("blob:")) {
+      if (item.type === "file" && item.url?.startsWith("blob:")) {
         URL.revokeObjectURL(item.url);
       }
       folder.children.splice(index, 1);
@@ -205,7 +229,7 @@ export default function GoogleDriveClone() {
     }
   };
 
-  const handleRename = (item: DriveItem) => {
+  const handleRename = (item: DriveItem): DriveItem => {
     const newName = prompt("Enter new name", item.name);
     if (newName && newName !== item.name) {
       item.name = newName;
@@ -244,6 +268,7 @@ export default function GoogleDriveClone() {
     window.open(url, "_blank");
   };
 
+  const currentFolder = getCurrentFolder();
   const filteredItems = currentFolder.children.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
@@ -268,8 +293,7 @@ export default function GoogleDriveClone() {
             onClick={handleUpload}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            <Upload className="mr-2 h-4 w-4" />
-            Upload
+            <Upload className="mr-2 h-4 w-4" /> Upload
           </Button>
           <input
             type="file"
