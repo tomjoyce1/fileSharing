@@ -26,17 +26,20 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
       },
-    }, 
+    },
   },
   server: {
     proxy: {
-      "/api": "http://localhost:3001", // Proxy all /api requests to backend
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        secure: false,
+      },
     },
     fs: {
       // Allow serving files from the public directory
       allow: [".."],
     },
   },
-  // Configure public directory where argon2.wasm is stored
   publicDir: "public",
 });

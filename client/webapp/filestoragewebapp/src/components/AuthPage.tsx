@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { Buffer } from "buffer";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import { ml_kem1024 } from "@noble/post-quantum/ml-kem";
@@ -321,9 +321,19 @@ export default function AuthPage({
           // Send to server (update endpoint to /api/keyhandler/register)
           console.log("[Register] Sending registration request to server...");
           console.log("[Register] Payload:", { username, key_bundle });
+
+          // Test if proxy is working
+          const testResponse = await fetch("/api/keyhandler/register", {
+            method: "HEAD",
+          });
+          console.log("[Register] Proxy test response:", testResponse.status);
+
           const res = await fetch("/api/keyhandler/register", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
             body: JSON.stringify({ username, key_bundle }),
           });
 
@@ -331,6 +341,7 @@ export default function AuthPage({
           let errorMsg = "Registration failed";
           try {
             const data = await res.clone().json();
+            console.log("[Register] Server response body:", data);
             if (typeof data === "object" && data && "message" in data) {
               errorMsg = (data as any).message;
             }
