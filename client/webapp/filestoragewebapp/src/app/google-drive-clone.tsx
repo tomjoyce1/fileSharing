@@ -10,12 +10,12 @@ import {
   Video,
   File,
 } from "lucide-react";
-import { getKeyFromIndexedDB, decryptPrivateKey } from "../lib/crypto/KeyUtils";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { getKeyFromIndexedDB, decryptPrivateKey } from "@/lib/crypto/KeyUtils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { mockData } from "./mockdata";
 import type { FileItem, FolderItem, DriveItem } from "./mockdata";
-import DriveList from "../components/DriveList";
+import DriveList from "@/components/DriveList";
 import {
   generateFEKComponents,
   deriveFEK,
@@ -23,7 +23,7 @@ import {
   encryptMetadataWithFEK,
   signFileRecordEd25519,
   decryptFileBuffer,
-} from "~/lib/crypto/encryptor";
+} from "@/lib/crypto/encryptor";
 import sodium from "libsodium-wrappers";
 
 export default function GoogleDriveClone() {

@@ -1,4 +1,14 @@
 // encryptor.ts
+
+// 
+
+
+// THIS IS FOR FILE ENCRYPTION, STAGE 2
+
+
+
+
+// 
 import sodium from "libsodium-wrappers";
 
 export async function generateFEKComponents() {

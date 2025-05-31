@@ -21,10 +21,16 @@ async function registerUser(
   username: string,
   key_bundle: z.infer<typeof KeyBundlePublicSerializable>
 ): Promise<ResultAsync<void, Error>> {
+  // const insertData = {
+  //   username,
+  //   public_key_bundle: Buffer.from(JSON.stringify(key_bundle)),
+  // };
+
   const insertData = {
     username,
-    public_key_bundle: Buffer.from(JSON.stringify(key_bundle)),
+    public_key_bundle: JSON.stringify(key_bundle), // ← no Buffer
   };
+
   const result = await fromPromise(
     db.insert(usersTable).values(insertData),
     (e) => (e instanceof Error ? e : new Error(String(e)))
