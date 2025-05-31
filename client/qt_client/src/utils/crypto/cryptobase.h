@@ -1,7 +1,7 @@
 #pragma once
 #include <cstddef>
 
-/*
+/**
  * Defines the abstract base class that is inherited by all crypto classes
  *
  * C++ Chris Concepts:

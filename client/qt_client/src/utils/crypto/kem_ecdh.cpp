@@ -5,6 +5,7 @@ Kem_Ecdh::Kem_Ecdh() {
     if (sodium_init() < 0) {
         throw std::runtime_error("libsodium initialization failed");
     }
+    // Immediately generate keypair
     keygen();
 }
 
@@ -25,7 +26,7 @@ Kem_Ecdh& Kem_Ecdh::operator=(const Kem_Ecdh&) {
 void Kem_Ecdh::keygen() {
     // rand private scalar
     randombytes_buf(_sk, sizeof _sk);
-    // pub = scalar * basepoint
+    // pub = scalar * curve's basepoint
     crypto_scalarmult_base(_pk, _sk);
 }
 
@@ -48,7 +49,10 @@ Encaps Kem_Ecdh::encap(const std::vector<uint8_t>& peerPk) const {
 
     // DH: shared = esk * peerPk
     std::vector<uint8_t> shared(crypto_scalarmult_BYTES);
-    crypto_scalarmult(shared.data(), esk, peerPk.data());
+    int rc = crypto_scalarmult(shared.data(), esk, peerPk.data());
+    if (rc != 0) {
+        throw std::runtime_error("Kem_Ecdh::encap: crypto_scalarmult failed");
+    }
 
     return Encaps{
         std::vector<uint8_t>(epk, epk + sizeof epk),
@@ -62,6 +66,10 @@ std::vector<uint8_t> Kem_Ecdh::decap(const std::vector<uint8_t>& ciphertext) con
         throw std::invalid_argument("ciphertext must be 32 bytes");
     }
     std::vector<uint8_t> shared(crypto_scalarmult_BYTES);
-    crypto_scalarmult(shared.data(), _sk, ciphertext.data());
+    int rc = crypto_scalarmult(shared.data(), _sk, ciphertext.data());
+    if (rc != 0) {
+        throw std::runtime_error("Kem_Ecdh::encap: crypto_scalarmult failed");
+    }
+
     return shared;
 }

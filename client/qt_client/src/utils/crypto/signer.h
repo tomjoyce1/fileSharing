@@ -1,7 +1,7 @@
 #pragma once
 #include "cryptobase.h"
 #include <vector>
-#include <stdint.h>
+#include <cstdint>
 
 /**
  * Defines the Signer interface

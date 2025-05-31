@@ -22,6 +22,7 @@ public:
     ~Kem_Ecdh() override;
 
     // Copy operations throw exceptions to avoid unintentional key duplication
+    // Allowing copy increases attack surface
     Kem_Ecdh(const Kem_Ecdh&);
     Kem_Ecdh& operator=(const Kem_Ecdh&);
 
@@ -29,7 +30,7 @@ public:
     Kem_Ecdh(Kem_Ecdh&&) noexcept = default;
     Kem_Ecdh& operator=(Kem_Ecdh&&) noexcept = default;
 
-    // Inherited functions from Kem interface
+    // Inherited functions from the Kem interface
     void keygen() override;
     std::vector<uint8_t> pub() const override;
     Encaps encap(const std::vector<uint8_t>& peerPk) const override;
