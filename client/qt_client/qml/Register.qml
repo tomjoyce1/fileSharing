@@ -13,6 +13,7 @@ Item {
         id: errorDialog; modal: true; standardButtons: Dialog.Ok
         title: qsTr("Register failed")
         contentItem: Text { text: errorText; wrapMode: Text.Wrap; width: parent.width }
+        property string errorText: ""
     }
 
     ColumnLayout {

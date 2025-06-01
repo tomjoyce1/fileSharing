@@ -72,3 +72,30 @@ CMakeLists.txt.user*
 *.dll
 *.exe
 
+# Qt Creator / IDE files (if you don’t want to check them in)
+*.user
+*.pro.user*
+*.vcxproj*
+*.sln
+.idea/
+*.iml
+
+# CMake build directories (adjust if your build folder is named differently)
+/client/qt_client/build/
+/client/qt_client/CMakeFiles/
+/client/qt_client/CMakeCache.txt
+/client/qt_client/compile_commands.json
+
+# Intermediate / generated files
+/client/qt_client/*.user
+/client/qt_client/*.log
+/client/qt_client/*.obj
+/client/qt_client/*.o
+/client/qt_client/*.exe
+/client/qt_client/*.dll
+/client/qt_client/*.lib
+
+# General temporary / backup
+*~
+*.swp
+.DS_Store

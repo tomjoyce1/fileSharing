@@ -5,7 +5,7 @@
 #include "Kem_Ecdh.h"
 #include "Signer_Ed.h"
 #include "Signer_Dilithium.h"
-
+#include "DerUtils.h"
 
 static constexpr int BASE64_VARIANT = sodium_base64_VARIANT_ORIGINAL;
 
@@ -84,7 +84,7 @@ KeyBundle::KeyBundle() {
     signerEd.keygen();
     ed25519Pub_ = signerEd.pub();
 
-    // Dilithium2 signature keypair
+    // Dilithium5 signature keypair
     Signer_Dilithium signerDilithium;
     signerDilithium.keygen();
     dilithiumPub_ = signerDilithium.pub();
@@ -141,21 +141,21 @@ KeyBundle& KeyBundle::operator=(KeyBundle&& other) noexcept {
 }
 
 
-std::string KeyBundle::toJson() const {
-    // Base64-encode each public key
-    std::string x25519_b64    = toBase64(x25519Pub_);
-    std::string ed25519_b64   = toBase64(ed25519Pub_);
-    std::string dilithium_b64 = toBase64(dilithiumPub_);
+std::string KeyBundle::toJson() const
+{
+    // DER wrap → Base64
+    const std::string kemB64 = toBase64( der::x25519(x25519Pub_) );
+    const std::string edB64  = toBase64( der::ed25519(ed25519Pub_) );
+    const std::string dilB64 = toBase64( dilithiumPub_ );      // raw already
 
-    // Build compact JSON
     std::ostringstream oss;
-    oss << "{"
-        << "\"x25519\":\""    << x25519_b64    << "\","
-        << "\"ed25519\":\""   << ed25519_b64   << "\","
-        << "\"dilithium\":\"" << dilithium_b64 << "\""
-        << "}";
+    oss << R"({"preQuantum":{"identityKemPublicKey":")"       << kemB64
+        << R"(","identitySigningPublicKey":")"                << edB64
+        << R"("},"postQuantum":{"identitySigningPublicKey":")"<< dilB64
+        << R"("}})";
     return oss.str();
 }
+
 
 
 KeyBundle KeyBundle::fromJson(const std::string& jsonStr) {

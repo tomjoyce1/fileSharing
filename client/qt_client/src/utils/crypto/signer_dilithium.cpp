@@ -3,7 +3,7 @@
 #include <sodium.h>
 
 /*
- * Post-quantum Dilithium2 implementation via liboqs’s OQS_SIG API.
+ * Post-quantum Dilithium5 (ML-DSA87) implementation via liboqs’s OQS_SIG API.
  */
 
 Signer_Dilithium::Signer_Dilithium() {
@@ -11,10 +11,10 @@ Signer_Dilithium::Signer_Dilithium() {
         throw std::runtime_error("libsodium initialization failed");
     }
 
-    // Create a Dilithium2 context
-    _oqs = OQS_SIG_new(OQS_SIG_alg_dilithium_2);
+    // Create a Dilithium5 context
+    _oqs = OQS_SIG_new(OQS_SIG_alg_dilithium_5);
     if (_oqs == nullptr) {
-        throw std::runtime_error("OQS_SIG_new(Dilithium2) failed");
+        throw std::runtime_error("OQS_SIG_new(Dilithium5) failed");
     }
 
     keygen();
@@ -37,7 +37,7 @@ Signer_Dilithium& Signer_Dilithium::operator=(const Signer_Dilithium&) {
     throw std::logic_error("Signer_Dilithium copy-assignment is forbidden");
 }
 
-// Generate a fresh Dilithium2 keypair
+// Generate a fresh Dilithium5 keypair
 void Signer_Dilithium::keygen() {
     // Resize to library‐specified lengths
     _pk.resize(_oqs->length_public_key);
