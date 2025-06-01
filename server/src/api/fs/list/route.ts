@@ -38,11 +38,12 @@ async function getAccessibleFiles(
         f.upload_timestamp,
         1 as is_owner,
         NULL as encrypted_fek,
-        NULL as encrypted_fek_salt,
         NULL as encrypted_fek_nonce,
         NULL as encrypted_mek,
-        NULL as encrypted_mek_salt,
-        NULL as encrypted_mek_nonce
+        NULL as encrypted_mek_nonce,
+        NULL as ephemeral_public_key,
+        NULL as file_content_nonce,
+        NULL as metadata_nonce
       FROM ${filesTable} f
       WHERE f.owner_user_id = ${user_id}
 
@@ -56,11 +57,12 @@ async function getAccessibleFiles(
         f.upload_timestamp,
         0 as is_owner,
         sa.encrypted_fek,
-        sa.encrypted_fek_salt,
         sa.encrypted_fek_nonce,
         sa.encrypted_mek,
-        sa.encrypted_mek_salt,
-        sa.encrypted_mek_nonce
+        sa.encrypted_mek_nonce,
+        sa.ephemeral_public_key,
+        sa.file_content_nonce,
+        sa.metadata_nonce
       FROM ${sharedAccessTable} sa
       INNER JOIN ${filesTable} f ON sa.file_id = f.file_id
       WHERE sa.shared_with_user_id = ${user_id}
@@ -92,19 +94,20 @@ async function getAccessibleFiles(
       if (!row.is_owner && row.encrypted_fek) {
         baseFile.shared_access = {
           encrypted_fek: Buffer.from(row.encrypted_fek).toString("base64"),
-          encrypted_fek_salt: Buffer.from(row.encrypted_fek_salt).toString(
-            "base64"
-          ),
           encrypted_fek_nonce: Buffer.from(row.encrypted_fek_nonce).toString(
             "base64"
           ),
           encrypted_mek: Buffer.from(row.encrypted_mek).toString("base64"),
-          encrypted_mek_salt: Buffer.from(row.encrypted_mek_salt).toString(
-            "base64"
-          ),
           encrypted_mek_nonce: Buffer.from(row.encrypted_mek_nonce).toString(
             "base64"
           ),
+          ephemeral_public_key: Buffer.from(row.ephemeral_public_key).toString(
+            "base64"
+          ),
+          file_content_nonce: Buffer.from(row.file_content_nonce).toString(
+            "base64"
+          ),
+          metadata_nonce: Buffer.from(row.metadata_nonce).toString("base64"),
         };
       }
 

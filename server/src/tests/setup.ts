@@ -10,6 +10,11 @@ import {
   diffieHellman,
   randomBytes,
   createCipheriv,
+  KeyObject,
+  generateKeyPairSync,
+  createPrivateKey,
+  createPublicKey,
+  createDecipheriv,
 } from "node:crypto";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import {
@@ -291,32 +296,83 @@ class TestFileHelper {
 }
 
 class TestSharingHelper extends TestFileHelper {
-  private deriveSharedSecret(privateKey: any, publicKey: any): Buffer {
-    return diffieHellman({ privateKey, publicKey });
+  private deriveSharedSecret(
+    ephemeralPrivateKey: KeyObject,
+    recipientPublicKey: KeyObject
+  ): Buffer {
+    return diffieHellman({
+      privateKey: ephemeralPrivateKey,
+      publicKey: recipientPublicKey,
+    });
   }
 
   private encryptWithSharedSecret(
     data: Uint8Array,
-    sharedSecret: Buffer
-  ): {
-    readonly encrypted: Buffer;
-    readonly salt: Buffer;
-    readonly nonce: Buffer;
-  } {
-    const salt = randomBytes(32);
-    const nonce = randomBytes(16);
-
-    const crypto = require("crypto");
-    const key = crypto.pbkdf2Sync(sharedSecret, salt, 100000, 32, "sha256");
-
-    const cipher = createCipheriv("aes-256-ctr", key, nonce);
+    sharedSecret: Buffer,
+    nonce: Buffer
+  ): Buffer {
+    const cipher = createCipheriv("aes-256-ctr", sharedSecret, nonce);
     const encrypted1 = cipher.update(Buffer.from(data));
     const encrypted2 = cipher.final();
 
+    return Buffer.concat([encrypted1, encrypted2]);
+  }
+
+  private decryptWithSharedSecret(
+    encryptedData: Buffer,
+    sharedSecret: Buffer,
+    nonce: Buffer
+  ): Buffer {
+    const cipher = createDecipheriv("aes-256-ctr", sharedSecret, nonce);
+    const decrypted1 = cipher.update(encryptedData);
+    const decrypted2 = cipher.final();
+
+    return Buffer.concat([decrypted1, decrypted2]);
+  }
+
+  deriveClientDataFromSharedAccess(
+    sharedAccess: {
+      encrypted_fek: string;
+      encrypted_fek_nonce: string;
+      encrypted_mek: string;
+      encrypted_mek_nonce: string;
+      ephemeral_public_key: string;
+      file_content_nonce: string;
+      metadata_nonce: string;
+    },
+    recipientPrivateKeyBundle: KeyBundlePrivate
+  ): ClientFileData {
+    const ephemeralPublicKey = createPublicKey({
+      key: Buffer.from(sharedAccess.ephemeral_public_key, "base64"),
+      format: "der",
+      type: "spki",
+      encoding: "der",
+    });
+
+    const sharedSecret = diffieHellman({
+      privateKey: recipientPrivateKeyBundle.preQuantum.identityKem.privateKey,
+      publicKey: ephemeralPublicKey,
+    });
+
+    const fekNonce = Buffer.from(sharedAccess.encrypted_fek_nonce, "base64");
+    const fek = this.decryptWithSharedSecret(
+      Buffer.from(sharedAccess.encrypted_fek, "base64"),
+      sharedSecret,
+      fekNonce
+    );
+
+    const mekNonce = Buffer.from(sharedAccess.encrypted_mek_nonce, "base64");
+    const mek = this.decryptWithSharedSecret(
+      Buffer.from(sharedAccess.encrypted_mek, "base64"),
+      sharedSecret,
+      mekNonce
+    );
+
     return {
-      encrypted: Buffer.concat([encrypted1, encrypted2]),
-      salt,
-      nonce,
+      fek,
+      mek,
+      fileNonce: Buffer.from(sharedAccess.file_content_nonce, "base64"),
+      metadataNonce: Buffer.from(sharedAccess.metadata_nonce, "base64"),
     };
   }
 
@@ -325,7 +381,9 @@ class TestSharingHelper extends TestFileHelper {
     owner: TestUserData,
     shared_with_username: string,
     originalFek: Uint8Array,
-    originalMek: Uint8Array
+    originalMek: Uint8Array,
+    fileContentNonce: Uint8Array,
+    metadataNonce: Uint8Array
   ): Promise<Response> {
     const keyBundleResponse = await this.getUserKeyBundle(
       shared_with_username,
@@ -338,29 +396,47 @@ class TestSharingHelper extends TestFileHelper {
       keyBundleData.key_bundle
     );
 
+    const ephemeralKeyPair = generateKeyPairSync("x25519", {
+      publicKeyEncoding: { type: "spki", format: "der" },
+      privateKeyEncoding: { type: "pkcs8", format: "der" },
+    });
+
+    const ephemeralPrivateKey = createPrivateKey({
+      key: ephemeralKeyPair.privateKey,
+      format: "der",
+      type: "pkcs8",
+      encoding: "der",
+    });
+
     const sharedSecret = this.deriveSharedSecret(
-      owner.keyBundle.private.preQuantum.identityKem.privateKey,
+      ephemeralPrivateKey,
       recipientPublicBundle.preQuantum.identityKemPublicKey
     );
 
+    const fekNonce = randomBytes(16);
     const encryptedFekData = this.encryptWithSharedSecret(
       originalFek,
-      sharedSecret
+      sharedSecret,
+      fekNonce
     );
+
+    const mekNonce = randomBytes(16);
     const encryptedMekData = this.encryptWithSharedSecret(
       originalMek,
-      sharedSecret
+      sharedSecret,
+      mekNonce
     );
 
     const shareBody = {
       file_id,
       shared_with_username,
-      encrypted_fek: encryptedFekData.encrypted.toString("base64"),
-      encrypted_fek_salt: encryptedFekData.salt.toString("base64"),
-      encrypted_fek_nonce: encryptedFekData.nonce.toString("base64"),
-      encrypted_mek: encryptedMekData.encrypted.toString("base64"),
-      encrypted_mek_salt: encryptedMekData.salt.toString("base64"),
-      encrypted_mek_nonce: encryptedMekData.nonce.toString("base64"),
+      encrypted_fek: encryptedFekData.toString("base64"),
+      encrypted_fek_nonce: fekNonce.toString("base64"),
+      encrypted_mek: encryptedMekData.toString("base64"),
+      encrypted_mek_nonce: mekNonce.toString("base64"),
+      ephemeral_public_key: ephemeralKeyPair.publicKey.toString("base64"),
+      file_content_nonce: Buffer.from(fileContentNonce).toString("base64"),
+      metadata_nonce: Buffer.from(metadataNonce).toString("base64"),
     };
 
     return await this.makeAuthenticatedRequest(
@@ -542,7 +618,9 @@ export class TestHarness {
     recipientUsername: string,
     file_id: number,
     originalFek: Uint8Array,
-    originalMek: Uint8Array
+    originalMek: Uint8Array,
+    fileContentNonce: Uint8Array,
+    metadataNonce: Uint8Array
   ): Promise<Response> {
     const owner = this.getUser(ownerUsername);
     return await this._sharingHelper.shareFile(
@@ -550,7 +628,27 @@ export class TestHarness {
       owner,
       recipientUsername,
       originalFek,
-      originalMek
+      originalMek,
+      fileContentNonce,
+      metadataNonce
+    );
+  }
+
+  async deriveClientDataFromSharedAccess(
+    sharedAccess: {
+      encrypted_fek: string;
+      encrypted_fek_nonce: string;
+      encrypted_mek: string;
+      encrypted_mek_nonce: string;
+      ephemeral_public_key: string;
+      file_content_nonce: string;
+      metadata_nonce: string;
+    },
+    recipientPrivateKeyBundle: KeyBundlePrivate
+  ): Promise<ClientFileData> {
+    return this._sharingHelper.deriveClientDataFromSharedAccess(
+      sharedAccess,
+      recipientPrivateKeyBundle
     );
   }
 
@@ -679,7 +777,9 @@ export const TestScenarios = {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
 
     return { userA, userB, uploadResult, shareResponse } as const;

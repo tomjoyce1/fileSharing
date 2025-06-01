@@ -108,9 +108,10 @@ describe("File Download API", () => {
       .from(filesTable)
       .where(eq(filesTable.file_id, uploadResult.file_id))
       .then((rows: any[]) => rows[0]);
+    if (!fileRecord) throw new Error("File record missing");
 
-    const tamperedContent = Buffer.from("tampered content");
-    writeFileSync(fileRecord.storage_path, tamperedContent);
+    const tamperedContentOnDisk = Buffer.from("tampered content on disk");
+    writeFileSync(fileRecord.storage_path, tamperedContentOnDisk);
 
     const response = await harness.downloadFile(
       "testuser",
@@ -119,12 +120,22 @@ describe("File Download API", () => {
     harness.expectSuccessfulResponse(response);
 
     const responseData = (await response.json()) as any;
-    const downloadedContent = Buffer.from(
+    const downloadedFileContentRaw = Buffer.from(
       responseData.file_content,
       "base64"
-    ).toString();
-    expect(downloadedContent).toBe("tampered content");
-    expect(downloadedContent).not.toBe(originalContent);
+    );
+    expect(downloadedFileContentRaw.equals(tamperedContentOnDisk)).toBe(true);
+
+    const user = harness.getUser("testuser");
+    const signaturesValid = harness.verifyFileSignatures(
+      user.dbUser.user_id,
+      responseData.file_content,
+      uploadResult.test_data.encrypted_metadata,
+      responseData.pre_quantum_signature,
+      responseData.post_quantum_signature,
+      user.keyBundle.public
+    );
+    expect(signaturesValid).toBe(false);
   });
 
   test("file not found", async () => {
