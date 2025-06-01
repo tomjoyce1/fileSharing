@@ -4,19 +4,9 @@ import sodium from "libsodium-wrappers";
 import type { FileMetadata } from "../types";
 
 /**
- * Custom error class for key-related operations// Constants for ML-DSA-87
-export const ML_DSA_CONSTANTS = {
-  SEED_L// Post-quantum cryptography constants
-export const PQ_CONSTANTS = {
-  ML_DSA_SEED_LENGTH: 32,
-  ML_DSA_PK_LENGTH: 2592,  // Updated to match @noble/post-quantum library output
-  ML_DSA_SK_LENGTH: 4896,
-  ML_DSA_SIG_LENGTH: 2701
-} as const;32,
-  PUBLIC_KEY_LENGTH: 2592,  // Updated to match @noble/post-quantum library output
-  PRIVATE_KEY_LENGTH: 4896,
-  SIGNATURE_LENGTH: 2701
-} as const;xport class KeyError extends Error {
+ * Custom error class for key-related operations
+ */
+export class KeyError extends Error {
   constructor(
     message: string,
     public cause?: Error,
@@ -582,4 +572,59 @@ export async function storePrivateKeyInIndexedDB(keyName: string, key: Uint8Arra
     console.error('[KeyUtils] Failed to store private key in IndexedDB:', err);
     throw new KeyError('Failed to store private key', err as Error);
   }
+}
+
+/**
+ * Validate all required keys for a user
+ */
+export async function validateUserKeys(username: string): Promise<boolean> {
+  try {
+    // Check for all required keys
+    const edKey = await getKeyFromIndexedDB(`${username}_ed25519_priv`);
+    const x25519Key = await getKeyFromIndexedDB(`${username}_x25519_priv`);
+    const mldsaKey = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
+
+    // Validate Ed25519 key
+    if (!edKey || !(edKey instanceof Uint8Array) || edKey.length !== 64) {
+      console.error('[KeyUtils] Invalid Ed25519 key');
+      return false;
+    }
+
+    // Validate X25519 key
+    if (!x25519Key || !(x25519Key instanceof Uint8Array) || x25519Key.length !== 32) {
+      console.error('[KeyUtils] Invalid X25519 key');
+      return false;
+    }
+
+    // Validate ML-DSA key
+    if (!mldsaKey || !(mldsaKey instanceof Uint8Array)) {
+      console.error('[KeyUtils] Invalid ML-DSA key');
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[KeyUtils] Error validating keys:', err);
+    return false;
+  }
+}
+
+/**
+ * Clear all keys for a user
+ */
+export async function clearUserKeys(username: string): Promise<void> {
+  const db = await openKeyDB();
+  const tx = db.transaction("keys", "readwrite");
+  const store = tx.objectStore("keys");
+
+  await Promise.all([
+    store.delete(`${username}_ed25519_priv`),
+    store.delete(`${username}_x25519_priv`),
+    store.delete(`${username}_mldsa_priv`)
+  ]);
+
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }

@@ -31,11 +31,14 @@ import {
   signFileRecord,
   getKeyFromIndexedDB,
   getEncryptionKeys,
-  getPrivateKeyFromIndexedDB
+  getPrivateKeyFromIndexedDB,
+  validateUserKeys,
+  clearUserKeys
 } from "@/lib/crypto/KeyUtils";
 import type { FileMetadataListItem } from "@/lib/types";
 import sodium from "libsodium-wrappers";
 import { ml_dsa87 } from '@noble/post-quantum/ml-dsa';
+import { Buffer } from "buffer";
 // import scyrpt noble hashes scrypt
 interface FileItem {
   id: string;
@@ -231,7 +234,7 @@ const getSignatureHeaders = async (
   const preQuantumSignature = sodium.crypto_sign_detached(messageToSign, edPrivateKey);
 
   // Step 5: Sign with ML-DSA (noble library)
-  const postQuantumSignature = ml_dsa87.sign(messageToSign, mldsaPrivateKey);
+  const postQuantumSignature = ml_dsa87.sign(mldsaPrivateKey, messageToSign );
 
   // Step 6: Return headers with signatures and metadata
   const timestamp = Date.now().toString();
@@ -260,7 +263,7 @@ const getSignatureHeaders = async (
   const fetchFiles = async (pageNumber: number) => {
     const username = localStorage.getItem("drive_username");
     if (!username) {
-      window.location.href = '/auth';
+      setError("Not logged in. Please log in first.");
       return;
     }
     try {
@@ -268,43 +271,23 @@ const getSignatureHeaders = async (
       setError(null);
 
       const message = JSON.stringify({ page: pageNumber });
-      
-      // Get Ed25519 private key
+
+      // Sign the raw request body (as Uint8Array)
+      await sodium.ready;
       const edPrivateKey = await getPrivateKeyFromIndexedDB(`${username}_ed25519_priv`);
       if (!edPrivateKey) {
         setError("Your login keys are not available yet. Please wait a moment and click Retry.");
-        setIsLoading(false);
         return;
       }
-      
-      // Get ML-DSA-87 private key
-      const mldsaKey = await getPrivateKeyFromIndexedDB(`${username}_mldsa_priv`);
-      if (!mldsaKey) {
-        setError("Your login keys are not available yet. Please wait a moment and click Retry.");
-        setIsLoading(false);
-        return;
-      }
-      
-      // Prepare data to sign
-      const dataToSign = new Uint8Array([
-        ...new TextEncoder().encode(username),
-        ...new TextEncoder().encode(message)
-      ]);
-      
-      await sodium.ready;
-      
-      // Sign with both algorithms
-      const preQuantumSignature = sodium.crypto_sign_detached(dataToSign, edPrivateKey);
-      const postQuantumSignature = ml_dsa87.sign(dataToSign, mldsaKey);
-      
-      // Format signatures as required by server
-      const timestamp = Date.now().toString();
+      const dataToSign = new TextEncoder().encode(message);
+      const signature = Buffer.from(
+        sodium.crypto_sign_detached(dataToSign, edPrivateKey)
+      ).toString('base64');
+
       const headers = {
         'Content-Type': 'application/json',
         'X-Username': username,
-        'X-Timestamp': timestamp,
-        // Combine signatures as expected by server's NetworkingHelper
-        'X-Signature': `${Buffer.from(preQuantumSignature).toString('base64')}.${Buffer.from(postQuantumSignature).toString('base64')}`
+        'X-Signature': signature,
       };
 
       const response = await fetch("/api/fs/list", {
@@ -314,7 +297,9 @@ const getSignatureHeaders = async (
       });
 
       if (response.status === 401) {
-        window.location.href = '/auth';
+        const errorText = await response.text();
+        console.error('Authentication failed:', errorText);
+        setError("Authentication failed. Please try clicking Retry. If that doesn't work, you may need to log in again.");
         return;
       }
 
@@ -325,7 +310,9 @@ const getSignatureHeaders = async (
       const { fileData, hasNextPage } = await response.json();
       setFiles(fileData);
       setHasNextPage(hasNextPage);
+      setError(null); // Clear any previous errors on success
     } catch (err) {
+      console.error('Error fetching files:', err);
       setError(err instanceof Error ? err.message : "Failed to fetch files");
       setFiles([]);
     } finally {
@@ -333,9 +320,38 @@ const getSignatureHeaders = async (
     }
   };
 
-  useEffect(() => {
-    void fetchFiles(page);
-  }, [page]);
+  // Add retryDelay helper at the top of the file
+const retryDelay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Add retryFetchFiles function
+const retryFetchFiles = async (pageNumber: number, maxRetries = 3) => {
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await fetchFiles(pageNumber);
+      return; // Success
+    } catch (err) {
+      lastError = err;
+      console.warn(`Fetch attempt ${attempt} failed:`, err);
+      if (attempt < maxRetries) {
+        await retryDelay(1000 * attempt); // Exponential backoff
+        continue;
+      }
+    }
+  }
+
+  // If we get here, all retries failed
+  if (lastError) {
+    setError("Failed to load files after multiple attempts. You may need to log in again.");
+  }
+};
+
+// Update the useEffect to use retryFetchFiles
+useEffect(() => {
+  void retryFetchFiles(page);
+}, [page]);
+
 const handleFileChange = async (
   event: React.ChangeEvent<HTMLInputElement>
 ) => {
@@ -347,7 +363,8 @@ const handleFileChange = async (
 
   try {
     await sodiumReady;
-    const owner_user_id = crypto.randomUUID();
+    const uuid = crypto.randomUUID();
+    const owner_user_id = parseInt(uuid.replace(/-/g, '').slice(0, 8), 16);
 
     // Step 1: Generate encryption components
     const { s_pre, s_post } = await generateFEKComponents();
@@ -382,7 +399,7 @@ const handleFileChange = async (
     }
 
     // Step 5: Store key components
-    await storeEncryptionKeys(owner_user_id, {
+    await storeEncryptionKeys(owner_user_id.toString(), {
       s_pre: Array.from(s_pre),
       s_post: Array.from(s_post),
       file_nonce: Array.from(fileNonce),
@@ -416,7 +433,7 @@ const handleFileChange = async (
     // Step 7: Create FormData
     const formData = new FormData();
     formData.append('file', new Blob([encryptedData], { type: 'application/octet-stream' }));
-    formData.append('fileId', owner_user_id);
+    formData.append('fileId', owner_user_id.toString());
     formData.append('metadata', new Blob([encryptedMetadata], { type: 'application/octet-stream' }));
     formData.append('metadataNonce', new Blob([metadataNonce]));
 
@@ -690,8 +707,59 @@ const handleFileChange = async (
     }
   };
 
+  // Add key validation check
+  useEffect(() => {
+    const validateKeys = async () => {
+      const username = localStorage.getItem("drive_username");
+      if (!username) {
+        setError("Not logged in. Please log in first.");
+        return;
+      }
+
+      try {
+        const keysValid = await validateUserKeys(username);
+        if (!keysValid) {
+          console.error('[DriveClone] Invalid keys detected');
+          // Don't immediately redirect, let the user see the error
+          setError("Your login keys appear to be invalid. Please try clicking Retry, or log in again if the problem persists.");
+          return;
+        }
+
+        // Keys are valid, proceed with initial file fetch
+        void retryFetchFiles(page);
+      } catch (err) {
+        console.error('[DriveClone] Error validating keys:', err);
+        setError("Failed to validate login keys. Please try clicking Retry.");
+      }
+    };
+
+    void validateKeys();
+  }, []); // Run once on mount
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
+      {/* Error display */}
+      {error && (
+        <div className="p-4 mb-4 text-sm text-red-800 bg-red-100 rounded-lg dark:bg-red-900 dark:text-red-300">
+          <p>Error: {error}</p>
+          <button 
+            onClick={() => void retryFetchFiles(page)}
+            className="mt-2 px-4 py-2 text-sm bg-red-700 text-white rounded hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="flex items-center justify-center p-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          <span className="ml-2">Loading files...</span>
+        </div>
+      )}
+      
+      {/* Rest of your UI components */}
       <header className="border-b border-gray-800 bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-900/60">
         <div className="flex h-16 items-center px-6">
           <div className="flex flex-1 items-center space-x-4">
