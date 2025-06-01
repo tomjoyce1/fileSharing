@@ -11,16 +11,27 @@
 // 
 import sodium from "libsodium-wrappers";
 
-export async function generateFEKComponents() {
-  const s_pre = crypto.getRandomValues(new Uint8Array(32));
-  const s_post = crypto.getRandomValues(new Uint8Array(32));
-  return { s_pre, s_post };
+// Constants for encryption
+export const FILE_KEY_SIZE = 32; // 256 bits
+export const NONCE_SIZE = 12; // 96 bits for AES-GCM
+export const SALT_SIZE = 16;
+export const KEY_DERIVATION_ITERATIONS = 100000;
+
+export interface EncryptionResult {
+  encryptedData: Uint8Array;
+  nonce: Uint8Array;
 }
 
-export async function deriveFEK(
-  s_pre: Uint8Array,
-  s_post: Uint8Array,
-): Promise<CryptoKey> {
+// File Encryption Key Components
+export async function generateFEKComponents(): Promise<{ s_pre: Uint8Array; s_post: Uint8Array }> {
+  return {
+    s_pre: crypto.getRandomValues(new Uint8Array(FILE_KEY_SIZE)),
+    s_post: crypto.getRandomValues(new Uint8Array(FILE_KEY_SIZE))
+  };
+}
+
+// Derive File Encryption Key from components
+export async function deriveFEK(s_pre: Uint8Array, s_post: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const inputKey = new Uint8Array([...s_pre, ...s_post]);
 
@@ -36,8 +47,8 @@ export async function deriveFEK(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: new Uint8Array([]),
-      info: encoder.encode("owner_file_fek_derivation_v1"),
+      salt: new Uint8Array(SALT_SIZE),
+      info: encoder.encode("file_encryption_key_v1"),
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
@@ -46,9 +57,10 @@ export async function deriveFEK(
   );
 }
 
+// Derive Metadata Encryption Key from FEK
 export async function deriveMEK(fek: CryptoKey): Promise<CryptoKey> {
   const rawKey = await crypto.subtle.exportKey("raw", fek);
-
+  
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     rawKey,
@@ -61,8 +73,8 @@ export async function deriveMEK(fek: CryptoKey): Promise<CryptoKey> {
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: new Uint8Array([]),
-      info: new TextEncoder().encode("file_metadata_encryption_v1"),
+      salt: new Uint8Array(SALT_SIZE),
+      info: new TextEncoder().encode("metadata_encryption_key_v1"),
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
@@ -71,53 +83,83 @@ export async function deriveMEK(fek: CryptoKey): Promise<CryptoKey> {
   );
 }
 
-export async function encryptMetadataWithFEK(fek: CryptoKey, metadata: any) {
-  const mek = await deriveMEK(fek);
-  return encryptMetadata(mek, metadata);
+// Encrypt file buffer
+export async function encryptFileBuffer(fek: CryptoKey, buffer: ArrayBuffer): Promise<EncryptionResult> {
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_SIZE));
+  const encryptedData = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    fek,
+    buffer
+  );
+  return {
+    encryptedData: new Uint8Array(encryptedData),
+    nonce
+  };
 }
 
-export async function encryptMetadata(mek: CryptoKey, metadata: any) {
+// Encrypt metadata with derived MEK
+export async function encryptMetadataWithFEK(fek: CryptoKey, metadata: any): Promise<EncryptionResult> {
+  const mek = await deriveMEK(fek);
   const encoder = new TextEncoder();
   const plaintext = encoder.encode(JSON.stringify(metadata));
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_SIZE));
 
-  const encrypted = await crypto.subtle.encrypt(
+  const encryptedData = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     mek,
     plaintext
   );
 
   return {
-    encryptedMetadata: new Uint8Array(encrypted),
-    nonce,
+    encryptedData: new Uint8Array(encryptedData),
+    nonce
   };
 }
 
-export async function encryptFileBuffer(fek: CryptoKey, buffer: ArrayBuffer) {
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-
-  const encrypted = await crypto.subtle.encrypt(
+// General encryption utility for any data
+export async function encryptWithKey(
+  key: CryptoKey,
+  data: Uint8Array
+): Promise<EncryptionResult> {
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_SIZE));
+  const encryptedData = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
-    fek,
-    buffer
+    key,
+    data
   );
-
   return {
-    encryptedData: new Uint8Array(encrypted),
-    nonce,
+    encryptedData: new Uint8Array(encryptedData),
+    nonce
   };
 }
 
+// Decrypt file buffer
 export async function decryptFileBuffer(
   fek: CryptoKey,
-  encrypted: ArrayBuffer,
+  encryptedData: Uint8Array,
   nonce: Uint8Array
 ): Promise<ArrayBuffer> {
-  return await crypto.subtle.decrypt(
+  return crypto.subtle.decrypt(
     { name: "AES-GCM", iv: nonce },
     fek,
-    encrypted
+    encryptedData
   );
+}
+
+// Decrypt metadata with MEK
+export async function decryptMetadataWithMEK(
+  mek: CryptoKey,
+  encryptedMetadata: Uint8Array,
+  nonce: Uint8Array
+): Promise<any> {
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: nonce },
+    mek,
+    encryptedMetadata
+  );
+  
+  const decoder = new TextDecoder();
+  return JSON.parse(decoder.decode(decrypted));
 }
 
 export async function signFileRecordEd25519(

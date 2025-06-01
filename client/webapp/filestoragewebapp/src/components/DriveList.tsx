@@ -15,7 +15,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { FileItem, DriveItem } from "../app/mockdata";
+export interface FileItem {
+  id: string;
+  name: string;
+  type: "file";
+  fileType: "image" | "document" | "audio" | "video" | "pdf";
+  size: string;
+  modified: string;
+  url?: string;
+  encrypted?: boolean;
+  nonce?: Uint8Array;
+}
+
+export type DriveItem = FileItem;
 
 type Props = {
   items: DriveItem[];
