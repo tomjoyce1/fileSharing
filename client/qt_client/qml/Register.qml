@@ -10,10 +10,20 @@ Item {
     Material.accent: Material.DeepPurple
 
     Dialog {
-        id: errorDialog; modal: true; standardButtons: Dialog.Ok
+        id: errorDialog
+        modal: true
+        standardButtons: Dialog.Ok
         title: qsTr("Register failed")
-        contentItem: Text { text: errorText; wrapMode: Text.Wrap; width: parent.width }
+
+        /* local state that we will fill at run-time */
         property string errorText: ""
+
+        /* the visual content of the dialog */
+        contentItem: Text {
+            text: errorDialog.errorText      /*  ← note the prefix */
+            wrapMode: Text.Wrap
+            width: parent.width
+        }
     }
 
     ColumnLayout {
@@ -53,11 +63,13 @@ Item {
 
         Connections {
             target: registerHandler
-            onRegisterResult: {
+
+            /* modern handler syntax */
+            function onRegisterResult(title, message) {
                 if (title === "Success") {
                     appWin.loggedIn = true
                 } else {
-                    errorText = message
+                    errorDialog.errorText = message   //  ← prefixed
                     errorDialog.open()
                 }
             }

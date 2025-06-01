@@ -6,8 +6,10 @@
 RegisterHandler::RegisterHandler(QObject *parent)
     : QObject(parent)
 {
-    net_.init("");       // load CA bundle once
+
 }
+
+
 
 void RegisterHandler::registerUser(const QString &username,
                                    const QString &password,
@@ -45,13 +47,22 @@ void RegisterHandler::doRegister(QString username, QString password)
                              + kb.toJson() + "}";
 
     /* ❸ Build HTTP request */
-    HttpRequest req(HttpRequest::Method::POST,
-                    "/api/keyhandler/register",
-                    body,
-                    { { "Host", kHost_.toStdString() } });   // Content-Type + Length auto-added
+    HttpRequest req(
+        HttpRequest::Method::POST,
+        "/api/keyhandler/register",
+        body,
+        {
+            { "Host",         kHost_.toStdString() },
+            { "Content-Type", "application/json" }
+        }
+        );
 
-    /* ❹ Send */
-    HttpResponse resp = net_.sendRequest(kHost_.toStdString(), kPort_, req);
+    /* ❹ Send over plain‐HTTP to localhost:3000 */
+    HttpResponse resp = net_.sendRequest(
+        kHost_.toStdString(),
+        kPort_,
+        req
+        );
 
     /* ❺ Interpret result */
     QString title, msg;
@@ -66,7 +77,7 @@ void RegisterHandler::doRegister(QString username, QString password)
     }
 
     // marshal back to UI thread
-    QMetaObject::invokeMethod(this, [this,title,msg]{
+    QMetaObject::invokeMethod(this, [this, title, msg]{
             emit registerResult(title, msg);
         }, Qt::QueuedConnection);
 }

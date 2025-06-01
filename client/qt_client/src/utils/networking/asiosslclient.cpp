@@ -6,7 +6,8 @@
 #include <boost/asio/write.hpp>
 #include <openssl/ssl.h> // For SSL_set_tlsext_host_name
 #include <sstream>
-#include <iostream>      // optional debug
+#include <iostream>
+#include <filesystem>
 
 AsioSslClient::AsioSslClient()
     : ioContext_(std::make_shared<boost::asio::io_context>()),
@@ -30,8 +31,41 @@ AsioSslClient::~AsioSslClient() {
     }
 }
 
+
+
+#include <QDebug>              // <--- for qDebug()/qWarning()
+
 void AsioSslClient::init(const std::string& caCertPath) {
-    sslContext_->set_default_verify_paths();
+    if (!caCertPath.empty()) {
+        qDebug() << "[TLS INIT] Attempting to load CA file: "
+                 << QString::fromStdString(caCertPath);
+    } else {
+        qDebug() << "[TLS INIT] No CA path provided — will use system defaults";
+    }
+
+    if (!caCertPath.empty() && std::filesystem::exists(caCertPath)) {
+        boost::system::error_code ec;
+        sslContext_->load_verify_file(caCertPath, ec);
+        if (ec) {
+            qWarning() << "[TLS INIT] ERROR loading CA file:"
+                       << QString::fromStdString(caCertPath)
+                       << "–" << ec.message().c_str();
+            throw std::runtime_error(
+                "Failed to load CA file \"" + caCertPath + "\": " + ec.message());
+        }
+        qDebug() << "[TLS INIT] Successfully loaded CA from:"
+                 << QString::fromStdString(caCertPath);
+    }
+    else {
+        if (!caCertPath.empty()) {
+            qWarning() << "[TLS INIT] CA file does not exist:"
+                       << QString::fromStdString(caCertPath);
+        }
+        qDebug() << "[TLS INIT] Falling back to default verify paths";
+        sslContext_->set_default_verify_paths();
+    }
+
+    sslContext_->set_verify_mode(boost::asio::ssl::verify_peer);
 }
 
 HttpResponse AsioSslClient::sendRequest(

@@ -113,6 +113,7 @@ add_executable(qt_client
     src/utils/networking/asiosslclient.cpp
     src/utils/networking/signinghelper.h src/utils/networking/signinghelper.cpp
     src/utils/crypto/derutils.h src/utils/crypto/derutils.cpp
+    src/utils/networking/asiohttpclient.h src/utils/networking/asiohttpclient.cpp
 )
 
 # ─────────────────────────────────────────────────────────────

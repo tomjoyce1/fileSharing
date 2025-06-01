@@ -15,7 +15,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@libsql/client": "^0.15.6",
+    "@libsql/client": "^0.15.8",
     "@noble/post-quantum": "^0.4.1",
     "burger-api": "^0.2.3",
     "drizzle-orm": "^0.43.1",

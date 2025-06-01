@@ -2,7 +2,7 @@
 #include <QObject>
 #include <QString>
 
-#include "utils/networking/AsioSslClient.h"     // networking
+#include "utils/networking/AsioHttpClient.h"     // networking
 #include "utils/crypto/KeyBundle.h"         // creates key bundle
 #include "utils/networking/HttpRequest.h"       // serialise POST
 
@@ -23,8 +23,7 @@ signals:
 private:
     void doRegister(QString username, QString password); // runs in worker
 
-    AsioSslClient net_;        // re-usable client (single-thread use)
+    AsioHttpClient net_;       // re-usable client (single-thread use)
     const QString kHost_  = "localhost";
-    const int     kPort_  = 443;
-    const QString kCACert_= "/etc/ssl/certs/ca-bundle.crt";
+    const int     kPort_  = 3000;
 };
