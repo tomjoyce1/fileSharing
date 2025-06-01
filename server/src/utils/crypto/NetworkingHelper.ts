@@ -224,6 +224,7 @@ async function verifyRequestSignature(
     signatures,
     publicBundle
   );
+
   return isValid ? username : null;
 }
 
@@ -262,7 +263,6 @@ export async function getAuthenticatedUserFromRequest(
       userPublicBundle,
       requestBody
     );
-
     if (!authenticatedUsername || authenticatedUsername !== username) {
       return err("Invalid signature");
     }
