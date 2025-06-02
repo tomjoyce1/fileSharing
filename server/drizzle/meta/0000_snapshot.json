@@ -1,7 +1,11 @@
 {
   "version": "6",
   "dialect": "sqlite",
+<<<<<<< HEAD
   "id": "78f35fb1-4fac-4b7c-9174-5e63d1e27334",
+=======
+  "id": "33c75e9b-37d7-44f3-9dc3-511bf69a6e3f",
+>>>>>>> origin/main
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "files_table": {
@@ -124,15 +128,22 @@
           "notNull": true,
           "autoincrement": false
         },
-        "encrypted_fek": {
-          "name": "encrypted_fek",
+        "file_content_nonce": {
+          "name": "file_content_nonce",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "encrypted_fek_salt": {
-          "name": "encrypted_fek_salt",
+        "metadata_nonce": {
+          "name": "metadata_nonce",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encrypted_fek": {
+          "name": "encrypted_fek",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
@@ -152,13 +163,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "encrypted_mek_salt": {
-          "name": "encrypted_mek_salt",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "encrypted_mek_nonce": {
           "name": "encrypted_mek_nonce",
           "type": "blob",
@@ -166,6 +170,16 @@
           "notNull": true,
           "autoincrement": false
         },
+<<<<<<< HEAD
+=======
+        "ephemeral_public_key": {
+          "name": "ephemeral_public_key",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+>>>>>>> origin/main
         "shared_at": {
           "name": "shared_at",
           "type": "integer",

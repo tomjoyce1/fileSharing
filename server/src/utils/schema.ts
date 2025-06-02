@@ -59,11 +59,12 @@ export interface FileMetadataListItem {
   is_owner: boolean;
   shared_access?: {
     encrypted_fek: string;
-    encrypted_fek_salt: string;
     encrypted_fek_nonce: string;
     encrypted_mek: string;
-    encrypted_mek_salt: string;
     encrypted_mek_nonce: string;
+    ephemeral_public_key: string;
+    file_content_nonce: string;
+    metadata_nonce: string;
   };
 }
 

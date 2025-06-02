@@ -1,54 +1,108 @@
+// Sidebar.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
-
 
 Rectangle {
     id: root
+    property var appwin
+
     width: 220
-    color: Material.surface
-    border.color: Material.divider
-    border.width: 1
+    color: white
+
+    // load your bundled Material Icons font
+    FontLoader {
+        id: materialIcons
+        source: "qrc:/resources/fonts/MaterialIcons-Regular.ttf"
+        onStatusChanged: console.log("FontLoader:", status, materialIcons.name)
+    }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 24
+        anchors.margins: 14
+        spacing: 10
 
+        // — Logo —
         Label {
-            text: "Gobbler"
-            font.pixelSize: 22
+            text: "SSShare"
+            font.pixelSize: 28
             font.bold: true
-            color: Material.accent
+            color: Material.color(Material.DeepPurple, Material.Shade700)
+            horizontalAlignment: Text.AlignHCenter
+            Layout.alignment: Qt.AlignHCenter
         }
 
-        ColumnLayout {
-            spacing: 12
-            Repeater {
-                model: ["All files", "My files", "Shared with me"]
-                delegate: Button {
-                    text: modelData
-                    flat: true
-                    Layout.fillWidth: true
-                    font.pixelSize: 16
-                    leftPadding: 0
+        // — Nav data —
+        ListModel {
+            id: navModel
+            ListElement { iconCode: "\uE2C8"; labelText: qsTr("All files") }
+            ListElement { iconCode: "\uE7FD"; labelText: qsTr("My files") }
+            ListElement { iconCode: "\uE7EF"; labelText: qsTr("Shared with me") }
+        }
+
+        Repeater {
+                    model: navModel
+                    delegate: Rectangle {
+                        id: navItem
+                        width: parent ? parent.width : root.width
+                        height: 30
+                        color: "transparent"
+                        property bool hovered: false
+                        Layout.fillWidth: true
+
+                        // icon + text, flush-left with 8px gap
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+
+                            Label {
+                                font.family: materialIcons.name
+                                font.pixelSize: 20
+                                text: iconCode
+                                color: navItem.hovered
+                                    ? Material.accent
+                                    : "#212121"
+                            }
+
+                            Label {
+                                text: labelText
+                                font.pixelSize: 16
+                                color: navItem.hovered
+                                    ? Material.accent
+                                    : "#212121"
+                            }
+                        }
+
+                        // MUST come *after* your Row so it's on top
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered:  navItem.hovered = true
+                            onExited:   navItem.hovered = false
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked:  console.log("nav to", labelText)
+                        }
+                    }
                 }
-            }
-        }
 
+
+
+        // FileUploadArea
         FileUploadArea {
-            onFilesDropped:   console.log("dropped:", fileUrls)
-            onUploadRequested: console.log("upload:", fileUrls)
+            // signals: uploadRequested, cancelRequested…
         }
 
-        Item { Layout.fillHeight: true }
 
+        // storage usage
         Label {
-            text: "Storage used: 75%"
-            color: Material.onSurface      // ← use onSurface, not onSurfaceVariant
+            text: qsTr("Storage used: 75%")
+            font.pixelSize: 14
+            color: Material.onSurfaceVariant
+            Layout.margins: 8
         }
-
         ProgressBar {
             value: 0.75
             Layout.fillWidth: true
