@@ -7,25 +7,16 @@
 /**
  * Signer_Dilithium
  *
- * Post-quantum digital signature using CRYSTALS-Dilithium2 via liboqs.
- *
- *
- * C++ Concepts:
- *  - Inheritance & Polymorphism
- *  - RAII: allocate + free OQS_SIG context
- *  - Rule of Five: delete copy, default move
- *  - Secure Memory: wipe secret key on destruction
+ * Post-quantum digital signature using CRYSTALS-Dilithium (via liboqs).
  */
 class Signer_Dilithium : public Signer {
 public:
     Signer_Dilithium();
     ~Signer_Dilithium() override;
 
-    // Disallow copying
+    // forbid copy, allow move
     Signer_Dilithium(const Signer_Dilithium&);
     Signer_Dilithium& operator=(const Signer_Dilithium&);
-
-    // Allow moving
     Signer_Dilithium(Signer_Dilithium&&) noexcept = default;
     Signer_Dilithium& operator=(Signer_Dilithium&&) noexcept = default;
 
@@ -36,8 +27,17 @@ public:
     bool verify(const std::vector<uint8_t>& msg,
                 const std::vector<uint8_t>& signature) const override;
 
+    // ← NEW: load an existing Dilithium secret key (exact length = _oqs->length_secret_key)
+    void loadPrivateKey(const uint8_t* rawSk, size_t len);
+
+    // ← NEW: return the secret‐key length (so caller knows how big to supply)
+    size_t skLength() const { return static_cast<size_t>(_oqs->length_secret_key); }
+
+    // ← NEW: get a pointer to the raw secret‐key buffer
+    const uint8_t* getSecretKeyBuffer() const { return _sk.data(); }
+
 private:
-    OQS_SIG * _oqs;                   // liboqs signature context
-    std::vector<uint8_t> _pk;         // public key bytes
-    std::vector<uint8_t> _sk;         // secret key bytes
+    OQS_SIG*             _oqs;  // the OQS signature context (Dilithium5)
+    std::vector<uint8_t> _pk;   // public key (length = _oqs->length_public_key)
+    std::vector<uint8_t> _sk;   // secret key (length = _oqs->length_secret_key)
 };

@@ -10,14 +10,13 @@ Signer_Dilithium::Signer_Dilithium() {
     if (sodium_init() < 0) {
         throw std::runtime_error("libsodium initialization failed");
     }
-
-    // Create a Dilithium5 context
     _oqs = OQS_SIG_new(OQS_SIG_alg_dilithium_5);
     if (_oqs == nullptr) {
         throw std::runtime_error("OQS_SIG_new(Dilithium5) failed");
     }
-
-    keygen();
+    // Allocate zero-length vectors; keygen() will resize them
+    _pk.clear();
+    _sk.clear();
 }
 
 Signer_Dilithium::~Signer_Dilithium() {
@@ -85,3 +84,15 @@ bool Signer_Dilithium::verify(const std::vector<uint8_t>& msg,
                signature.data(), signature.size(),
                _pk.data()) == OQS_SUCCESS;
 }
+
+// ← NEW: load an existing Dilithium secret key into _sk
+void Signer_Dilithium::loadPrivateKey(const uint8_t* rawSk, size_t len) {
+    if (len != static_cast<size_t>(_oqs->length_secret_key)) {
+        throw std::runtime_error("Signer_Dilithium::loadPrivateKey: wrong length");
+    }
+    // Resize _sk so that _sk.data() is valid:
+    _sk.resize(len);
+    memcpy(_sk.data(), rawSk, len);
+
+}
+

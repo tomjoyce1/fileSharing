@@ -4,12 +4,13 @@
 
 #include "utils/networking/AsioHttpClient.h"     // networking
 #include "utils/crypto/KeyBundle.h"         // creates key bundle
-#include "utils/networking/HttpRequest.h"       // serialise POST
+#include "utils/networking/HttpRequest.h"
+#include "utils/ClientStore.h"
 
 class RegisterHandler : public QObject {
     Q_OBJECT
 public:
-    explicit RegisterHandler(QObject *parent = nullptr);
+    explicit RegisterHandler(ClientStore* store, QObject *parent = nullptr);
 
     /** Exposed to QML */
     Q_INVOKABLE void registerUser(const QString &username,
@@ -23,6 +24,7 @@ signals:
 private:
     void doRegister(QString username, QString password); // runs in worker
 
+    ClientStore* m_store;
     AsioHttpClient net_;       // re-usable client (single-thread use)
     const QString kHost_  = "localhost";
     const int     kPort_  = 3000;

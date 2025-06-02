@@ -1,83 +1,121 @@
 #include "RegisterHandler.h"
-#include <QtConcurrent>            // <-- add QtConcurrent to QT += in .pro
+
 #include <QFutureWatcher>
 #include <QMetaObject>
+#include <QDebug>
+#include <QThread>
+#include <QtConcurrent>
 
-RegisterHandler::RegisterHandler(QObject *parent)
-    : QObject(parent)
+// Only needed if you manipulate JSON directly
+#include <nlohmann/json.hpp>
+
+/* ───────────────────────────────────────────────────────────── */
+
+static inline QString tid()       // handy thread-id helper
 {
-
+    return QStringLiteral("[%1]")
+        .arg(reinterpret_cast<quintptr>(QThread::currentThreadId()), 0, 16);
 }
 
+/* ───────────────────────────────────────────────────────────── */
 
+RegisterHandler::RegisterHandler(ClientStore *store, QObject *parent)
+    : QObject(parent),
+    m_store(store)
+{
+    qDebug() << tid() << "RegisterHandler ctor – store =" << store;
+}
+
+/* ───────────────────────── registerUser ────────────────────── */
 
 void RegisterHandler::registerUser(const QString &username,
                                    const QString &password,
                                    const QString &confirm)
 {
-    // basic client-side validation
+    qDebug() << tid() << "registerUser() entered with:"
+             << username << "(pwd len" << password.size() << ")";
+
+    /* basic client-side validation */
     if (username.isEmpty() || password.isEmpty() || confirm.isEmpty()) {
         emit registerResult("Error", "All fields are required");
+        qDebug() << tid() << "→ early-return: missing field(s)";
         return;
     }
     if (password != confirm) {
         emit registerResult("Error", "Passwords do not match");
+        qDebug() << tid() << "→ early-return: passwords mismatch";
         return;
     }
 
-    // run the heavy work off the UI thread
-    auto future = QtConcurrent::run([=]() { doRegister(username, password); });
+    /* run the heavy work off the UI thread */
+    auto fut = QtConcurrent::run([=] {
+        qDebug() << tid() << "worker      → doRegister() starts";
+        doRegister(username, password);
+        qDebug() << tid() << "worker      → doRegister() ends";
+    });
 
-    // ensure we keep this object alive until worker finishes
+    /* keep this object alive until the worker finishes */
     auto *watch = new QFutureWatcher<void>(this);
-    connect(watch, &QFutureWatcher<void>::finished,
-            watch, &QObject::deleteLater);
-    watch->setFuture(future);
+    connect(watch,  &QFutureWatcher<void>::finished,
+            watch,  &QObject::deleteLater);
+    watch->setFuture(fut);
 }
+
+/* ───────────────────────── doRegister ─────────────────────── */
 
 void RegisterHandler::doRegister(QString username, QString password)
 {
-    /* ❶ Create the key bundle */
-    KeyBundle kb;                     // generates X25519, Ed25519, Dilithium-5
+    /* ❶  Create the KeyBundle (X25519, Ed25519, Dilithium-5) */
+    KeyBundle kb;
 
-    /* ❷ Build JSON body */
-    const std::string body = std::string("{\"username\":\"")
-                             + username.toStdString()
-                             + "\",\"key_bundle\":"
-                             + kb.toJson() + "}";
+    /* ❷  Build POST body */
+    QByteArray body = QByteArrayLiteral("{\"username\":\"")
+                      + username.toUtf8()
+                      + "\",\"key_bundle\":"
+                      + QByteArray::fromStdString(kb.toJson()) + '}';
 
-    /* ❸ Build HTTP request */
-    HttpRequest req(
-        HttpRequest::Method::POST,
-        "/api/keyhandler/register",
-        body,
-        {
-            { "Host",         kHost_.toStdString() },
-            { "Content-Type", "application/json" }
-        }
-        );
+    qDebug() << tid() << "doRegister(): JSON body size =" << body.size();
 
-    /* ❹ Send over plain‐HTTP to localhost:3000 */
-    HttpResponse resp = net_.sendRequest(
-        kHost_.toStdString(),
-        kPort_,
-        req
-        );
+    /* ❸  Build HTTP request */
+    HttpRequest req(HttpRequest::Method::POST,
+                    "/api/keyhandler/register",
+                    body.toStdString(),
+                    { { "Host", kHost_.toStdString() },
+                     { "Content-Type", "application/json" } });
 
-    /* ❺ Interpret result */
+    /* ❹  Send over plain HTTP */
+    qDebug() << tid() << "doRegister(): sending HTTP POST …";
+    HttpResponse resp = net_.sendRequest(kHost_.toStdString(), kPort_, req);
+
+    qDebug() << tid() << "doRegister(): HTTP status =" << resp.statusCode;
+
+    /* ❺  Interpret server response */
     QString title, msg;
     if (resp.statusCode == 201) {
+        /* success – persist user locally */
+        ClientStore::UserInfo u;
+        u.username  = username.toStdString();
+        u.keybundle = kb;
+         qDebug() << "above setUser";
+        if (m_store) m_store->setUser(u);
+        qDebug() << "below setUser";
+
         title = "Success";
-        msg   = "Registration successful";
+        msg   = "Registration successful – you are now logged in.";
     } else {
         title = "Error";
-        msg   = QString("Server replied %1: %2")
+        msg   = QStringLiteral("Server replied %1: %2")
                   .arg(resp.statusCode)
                   .arg(QString::fromStdString(resp.body));
     }
 
-    // marshal back to UI thread
-    QMetaObject::invokeMethod(this, [this, title, msg]{
+    QMetaObject::invokeMethod(
+        this,
+        [this, title, msg]() {
+            qDebug() << tid() << "UI-thread → emit registerResult:" << title << "|" << msg;
             emit registerResult(title, msg);
-        }, Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection
+        );
+
 }

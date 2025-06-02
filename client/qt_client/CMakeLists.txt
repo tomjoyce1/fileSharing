@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC   ON)
 set(CMAKE_AUTORCC   ON)
 set(CMAKE_AUTOUIC   ON)
+cmake_policy(SET CMP0144 NEW)
 
 # ─────────────────────────────────────────────────────────────
 # 1) Qt6
@@ -17,6 +18,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickDialogs2
     Widgets
     Concurrent
+    QuickControls2Material
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -74,6 +76,8 @@ if (NOT OQS_INCLUDE_DIR OR NOT OQS_LIBRARY)
     message(FATAL_ERROR "Could not find liboqs under C:/msys64/mingw64")
 endif()
 
+find_package(nlohmann_json REQUIRED)
+
 
 # ─────────────────────────────────────────────────────────────
 # 6) Add your executable
@@ -114,6 +118,9 @@ add_executable(qt_client
     src/utils/networking/signinghelper.h src/utils/networking/signinghelper.cpp
     src/utils/crypto/derutils.h src/utils/crypto/derutils.cpp
     src/utils/networking/asiohttpclient.h src/utils/networking/asiohttpclient.cpp
+    src/utils/crypto/FileClientData.h
+    src/utils/clientstore.h src/utils/clientstore.cpp
+    src/handlers/fileuploadhandler.h src/handlers/fileuploadhandler.cpp
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -128,6 +135,7 @@ target_include_directories(qt_client PRIVATE
 qt6_add_resources(qt_client
     PREFIX /
     FILES
+        # QML
         qml/Main.qml
         qml/MainView.qml
         qml/Sidebar.qml
@@ -138,17 +146,18 @@ qt6_add_resources(qt_client
         qml/NavButton.qml
         qml/AppTopBar.qml
         qml/Register.qml
-        resources/fonts/MaterialIcons-Regular.ttf
 
+        # FONTS
+        assets/fonts/MaterialIcons-Regular.ttf
+        assets/fonts/ProductSansRegular.ttf
+        assets/fonts/ProductSansBold.ttf
+
+        # IMAGES
         assets/BLACKs.png
         assets/graybg.jpg
         assets/image1.png
         assets/SHAREBLACK.png
-        "assets/product-sans/Product Sans Regular.ttf"
-        "assets/product-sans/Product Sans Bold.ttf"
-        "assets/product-sans/Product Sans Italic.ttf"
 )
-
 # ─────────────────────────────────────────────────────────────
 # 8) Link against exactly those MSYS2 libraries
 target_link_libraries(qt_client PRIVATE
@@ -159,6 +168,7 @@ target_link_libraries(qt_client PRIVATE
     Qt6::QuickDialogs2
     Qt6::Widgets
     Qt6::Concurrent
+    Qt6::QuickControls2Material
 
     Boost::system               # (Asio is header-only)
     OpenSSL::Crypto
@@ -166,4 +176,5 @@ target_link_libraries(qt_client PRIVATE
 
     "${SODIUM_LIBRARY}"         # libsodium
     "${OQS_LIBRARY}"            # liboqs
+    nlohmann_json::nlohmann_json
 )

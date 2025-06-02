@@ -18,9 +18,13 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-
+#include <QQuickStyle>
 #include "LoginHandler.h"
 #include "RegisterHandler.h"
+#include "handlers/FileUploadHandler.h"
+#include "utils/ClientStore.h"
+#include <QDir>
+#include <QDebug>
 
 
 // ───────────────────────────── testHttps ─────────────────────────────
@@ -60,19 +64,35 @@ void testHttps() {
     std::cout << "===== end of testHttps() =====\n\n";
 }
 
+static QString defaultStorePath() {
+#ifdef Q_OS_WIN
+    return QDir::homePath() + "/AppData/Roaming/.ssshare/client_store.json";
+#else
+    return QDir::homePath() + "/.ssshare/client_store.json";
+#endif
+}
+
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
+    QQuickStyle::setStyle("Material");
     QQmlApplicationEngine engine;
 
+    QString storeFile = defaultStorePath();
+    ClientStore clientStore(storeFile.toStdString());
+    clientStore.load();
+
+
     LoginHandler    loginHandler;
-    RegisterHandler registerHandler;
+    RegisterHandler registerHandler(&clientStore);
+    FileUploadHandler* uploadHandler = new FileUploadHandler(&clientStore);
 
     engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
-    engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+   engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+    engine.rootContext()->setContextProperty("UploadHandler", uploadHandler);
 
-    testHttps();
+    // testHttps();
 
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     if (engine.rootObjects().isEmpty())

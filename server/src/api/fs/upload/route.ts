@@ -14,6 +14,10 @@ import type { KeyBundlePublic, APIError } from "~/utils/schema";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
+export const config = {
+  bodyLimit: 50 * 1024 * 1024,  // 50 MiB
+};
+
 export const schema = {
   post: {
     body: z

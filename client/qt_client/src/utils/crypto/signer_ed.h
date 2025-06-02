@@ -7,26 +7,16 @@
 /**
  * Signer_Ed
  *
- * Pre-quantum digital signature algorithm using Ed25519 (Edwards-curve).
- *
- *
- * C++ Concepts:
- *  - Inheritance & Polymorphism: implements Signer interface
- *  - Virtual Destructor: via CryptoBase
- *  - Resource Management: zeroizing secret on destruction
- *  - Rule of Five: delete copy, default move
+ * Pre-quantum Ed25519 implementation using libsodium’s crypto_sign API.
  */
 class Signer_Ed : public Signer {
 public:
     Signer_Ed();
     ~Signer_Ed() override;
 
-    // Copy operations throw exceptions to avoid unintentional key duplication
-    // Allowing copy increases attack surface
+    // forbid copying, allow moving
     Signer_Ed(const Signer_Ed&);
     Signer_Ed& operator=(const Signer_Ed&);
-
-    // Allow moving
     Signer_Ed(Signer_Ed&&) noexcept = default;
     Signer_Ed& operator=(Signer_Ed&&) noexcept = default;
 
@@ -37,7 +27,13 @@ public:
     bool verify(const std::vector<uint8_t>& msg,
                 const std::vector<uint8_t>& signature) const override;
 
+    // ← NEW: load an existing Ed25519 private key (64 bytes)
+    void loadPrivateKey(const uint8_t* rawSk, size_t len);
+
+    // ← NEW: get a pointer to the 64‐byte secret key buffer
+    const unsigned char* getSecretKeyBuffer() const { return _sk; }
+
 private:
-    uint8_t _sk[crypto_sign_SECRETKEYBYTES];
-    uint8_t _pk[crypto_sign_PUBLICKEYBYTES];
+    uint8_t _sk[crypto_sign_SECRETKEYBYTES];   // 64 bytes
+    uint8_t _pk[crypto_sign_PUBLICKEYBYTES];   // 32 bytes
 };
