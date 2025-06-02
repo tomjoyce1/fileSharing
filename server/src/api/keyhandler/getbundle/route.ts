@@ -63,7 +63,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    return Response.json({ message: "Unauthorized" }, { status: 401 });
+    return Response.json({ message: "Unauthorized c" }, { status: 401 });
   }
 
   const result = await getUserKeyBundle(username);

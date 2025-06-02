@@ -191,15 +191,24 @@ async function verifyRequestSignature(
   const signature = request.headers.get("X-Signature");
 
   if (!username || !timestamp || !signature) {
+    console.warn("[Auth Debug] Missing header(s):", {
+      username,
+      timestamp,
+      signature,
+    });
     return null;
   }
 
   if (!isWithinReplayWindow(timestamp)) {
+    console.warn("[Auth Debug] Timestamp outside replay window:", {
+      timestamp,
+    });
     return null;
   }
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
+    console.warn("[Auth Debug] Could not parse signatures:", { signature });
     return null;
   }
 
@@ -219,11 +228,17 @@ async function verifyRequestSignature(
     requestBody
   );
 
+  // Debug log canonical string and signature
+  console.log("[Auth Debug] Canonical string to verify:", canonicalString);
+  console.log("[Auth Debug] Username:", username);
+  console.log("[Auth Debug] Signature (base64):", signature);
+
   const isValid = await verifySignatures(
     canonicalString,
     signatures,
     publicBundle
   );
+  console.log("[Auth Debug] Signature valid?", isValid);
   return isValid ? username : null;
 }
 
@@ -269,6 +284,6 @@ export async function getAuthenticatedUserFromRequest(
 
     return ok(user);
   } catch {
-    return err("Authentication failed");
+    return err("Authentication faile aa");
   }
 }

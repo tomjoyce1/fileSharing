@@ -146,7 +146,7 @@ describe("File Upload API", () => {
   async function expectUnauthorized(response: Response) {
     const responseData = (await response.json()) as any;
     expect(response.status).toBe(401);
-    expect(responseData.message).toBe("Unauthorized");
+    expect(responseData.message).toBe("Unauthorized d");
 
     // verify no database record was created
     const files = await testDb.select().from(filesTable);

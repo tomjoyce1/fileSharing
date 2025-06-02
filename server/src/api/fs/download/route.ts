@@ -82,7 +82,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    return Response.json({ message: "Unauthorized" }, { status: 401 });
+    return Response.json({ message: "Unauthorized hittin gserv" }, { status: 401 });
   }
 
   const user = userResult.value;
