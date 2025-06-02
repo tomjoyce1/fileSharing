@@ -126,6 +126,27 @@ async function getKeyFromIndexedDB(key: string): Promise<Uint8Array | null> {
   });
 }
 
+// ASN.1 DER for Ed25519 public key (RFC 8410)
+function ed25519PublicKeyToSPKIDER(pubkey: Uint8Array): Uint8Array {
+  const prefix = Uint8Array.from([
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00
+  ]);
+  const out = new Uint8Array(prefix.length + pubkey.length);
+  out.set(prefix, 0);
+  out.set(pubkey, prefix.length);
+  return out;
+}
+
+// ASN.1 DER for X25519 public key (RFC 8410)
+function x25519PublicKeyToSPKIDER(pubkey: Uint8Array): Uint8Array {
+  const prefix = Uint8Array.from([
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00
+  ]);
+  const out = new Uint8Array(prefix.length + pubkey.length);
+  out.set(prefix, 0);
+  out.set(pubkey, prefix.length);
+  return out;
+}
 
 // Generate Dilithium keypair
 async function generateMLDSAKeypair(): Promise<KeyPair> {
@@ -149,9 +170,7 @@ async function generateMLDSAKeypair(): Promise<KeyPair> {
   if (keypair.secretKey.length !== 4896) {
     console.error(`Invalid ML-DSA secret key length: got ${keypair.secretKey.length}, expected 4896`);
     throw new Error("Invalid ML-DSA key length");
-  }
-
-  if (keypair.publicKey.length !== 2592) {
+  }          if (keypair.publicKey.length !== 2592) {
     console.error(`Invalid ML-DSA public key length: got ${keypair.publicKey.length}, expected 2592`);
     throw new Error("Invalid ML-DSA key length");
   }
@@ -279,16 +298,12 @@ console.log("mldsaTest length:", mldsaTest?.length);
           console.log("[Register] Constructing key_bundle...");
           const key_bundle = {
             preQuantum: {
-              identityKemPublicKey: uint8ArrayToBase64(x25519Keypair.publicKey),
-              identitySigningPublicKey: uint8ArrayToBase64(
-                ed25519Keypair.publicKey,
-              ),
+              identityKemPublicKey: uint8ArrayToBase64(x25519PublicKeyToSPKIDER(x25519Keypair.publicKey)),
+              identitySigningPublicKey: uint8ArrayToBase64(ed25519PublicKeyToSPKIDER(ed25519Keypair.publicKey)),
             },
             postQuantum: {
-              identityKemPublicKey: uint8ArrayToBase64(x25519Keypair.publicKey),
-              identitySigningPublicKey: uint8ArrayToBase64(
-                mldsaKeypair.publicKey,
-              ),
+              identityKemPublicKey: uint8ArrayToBase64(x25519PublicKeyToSPKIDER(x25519Keypair.publicKey)),
+              identitySigningPublicKey: uint8ArrayToBase64(mldsaKeypair.publicKey), // ML-DSA-87: raw
             },
           };
 

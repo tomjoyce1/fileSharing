@@ -92,6 +92,14 @@ export function serializeKeyBundlePublic(bundle: KeyBundlePublic): string {
 // Deserialize public key bundle from base64 JSON
 export function deserializeKeyBundlePublic(json: string | object): KeyBundlePublic {
   const obj = typeof json === 'string' ? JSON.parse(json) : json;
+  const kemKeyBuffer = Buffer.from(obj.preQuantum.identityKemPublicKey, 'base64');
+  const signingKeyBuffer = Buffer.from(obj.preQuantum.identitySigningPublicKey, 'base64');
+
+  console.log("Decoded KEM Key Buffer:", kemKeyBuffer);
+  console.log("Decoded Signing Key Buffer:", signingKeyBuffer);
+  console.log("KEM Key Buffer Length:", kemKeyBuffer.length);
+  console.log("Signing Key Buffer Length:", signingKeyBuffer.length);
+
   return {
     preQuantum: {
       identityKemPublicKey: Uint8Array.from(atob(obj.preQuantum.identityKemPublicKey), c => c.charCodeAt(0)),

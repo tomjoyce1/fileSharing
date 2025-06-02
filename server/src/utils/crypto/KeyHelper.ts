@@ -136,6 +136,25 @@ export function deserializeKeyBundlePublic(
     console.log("[Debug] Decoded KEM Key Buffer:", kemKeyBuffer);
     console.log("[Debug] Decoded Signing Key Buffer:", signingKeyBuffer);
 
+    // Log buffer lengths and types for additional debugging
+    console.log("[Debug] KEM Key Buffer Length:", kemKeyBuffer.length);
+    console.log("[Debug] Signing Key Buffer Length:", signingKeyBuffer.length);
+    console.log("[Debug] KEM Key Buffer Type:", kemKeyBuffer.constructor.name);
+    console.log(
+      "[Debug] Signing Key Buffer Type:",
+      signingKeyBuffer.constructor.name
+    );
+
+    // Check if the buffer is PEM, DER, or raw
+    const isPem = kemKeyBuffer.toString().includes("-----BEGIN");
+    console.log("[Debug] KEM Key Buffer Format:", isPem ? "PEM" : "DER or raw");
+
+    const isPemSigning = signingKeyBuffer.toString().includes("-----BEGIN");
+    console.log(
+      "[Debug] Signing Key Buffer Format:",
+      isPemSigning ? "PEM" : "DER or raw"
+    );
+
     // Validate key buffers
     if (kemKeyBuffer.length === 0 || signingKeyBuffer.length === 0) {
       console.error("[Error] Key buffer is empty or invalid:", {
@@ -145,15 +164,30 @@ export function deserializeKeyBundlePublic(
       throw new Error("Key buffer is empty or invalid");
     }
 
+    // Convert raw keys to DER format if necessary
+    const kemKey = isPem
+      ? kemKeyBuffer
+      : Buffer.concat([
+          Buffer.from("302a300506032b656e032100", "hex"), // ASN.1 header for X25519
+          kemKeyBuffer,
+        ]);
+
+    const signingKey = isPemSigning
+      ? signingKeyBuffer
+      : Buffer.concat([
+          Buffer.from("302a300506032b6570032100", "hex"), // ASN.1 header for Ed25519
+          signingKeyBuffer,
+        ]);
+
     return {
       preQuantum: {
         identityKemPublicKey: createPublicKey({
-          key: kemKeyBuffer,
+          key: kemKey,
           format: "der",
           type: "spki",
         }),
         identitySigningPublicKey: createPublicKey({
-          key: signingKeyBuffer,
+          key: signingKey,
           format: "der",
           type: "spki",
         }),

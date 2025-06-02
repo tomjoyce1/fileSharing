@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import GoogleDriveClone from "./app/google-drive-clone";
-import AuthPage from "./components/AuthPage";
-
+import AuthPage from './components/AuthPage';
 export default function App() {
   const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
 

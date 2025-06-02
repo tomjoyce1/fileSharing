@@ -190,22 +190,38 @@ async function verifyRequestSignature(
   const timestamp = request.headers.get("X-Timestamp");
   const signature = request.headers.get("X-Signature");
 
+  console.log("[Debug] Received Headers:", {
+    username,
+    timestamp,
+    signature,
+  });
+
   if (!username || !timestamp || !signature) {
+    console.error("[Error] Missing required headers");
     return null;
   }
 
   if (!isWithinReplayWindow(timestamp)) {
+    console.error("[Error] Timestamp outside replay window:", {
+      serverTime: new Date().toISOString(),
+      clientTimestamp: timestamp,
+    });
     return null;
   }
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
+    console.error("[Error] Invalid signature format:", signature);
     return null;
   }
+
+  console.log("[Debug] Parsed Signatures:", signatures);
 
   // use provided body or read from request
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
+
+  console.log("[Debug] Request Body:", requestBody);
 
   // extract just the path from the full URL to match signature creation
   const requestUrl = new URL(request.url);
@@ -219,13 +235,45 @@ async function verifyRequestSignature(
     requestBody
   );
 
+  // Log the canonical string for debugging
+  console.log("[Debug] aaaaaaaa Backend Canonical String:", canonicalString);
+
+  // Log details of the signature verification process
+  console.log("[Debug] Verifying Pre-Quantum Signature:", {
+    canonicalString,
+    signature: signatures.preQuantum,
+    publicKey: publicBundle.preQuantum.identitySigningPublicKey
+      .export({ format: "der", type: "spki" })
+      .toString("base64"),
+  });
+
+  console.log("[Debug] Verifying Post-Quantum Signature:", {
+    canonicalString,
+    signature: signatures.postQuantum,
+    publicKey:
+      publicBundle.postQuantum.identitySigningPublicKey
+        .slice(0, 10)
+        .toString() + "...", // Shortened for brevity
+  });
+
   const isValid = await verifySignatures(
     canonicalString,
     signatures,
     publicBundle
   );
 
-  return isValid ? username : null;
+  console.log("[Debug] Signature Verification Result:", isValid);
+
+  if (!isValid) {
+    console.error("[Error] Signature verification failed:", {
+      canonicalString,
+      signatures,
+      publicBundle,
+    });
+    return null;
+  }
+
+  return username;
 }
 
 export async function getAuthenticatedUserFromRequest(
@@ -254,6 +302,25 @@ export async function getAuthenticatedUserFromRequest(
     const userPublicBundle = deserializeKeyBundlePublic(
       JSON.parse(user.public_key_bundle.toString())
     );
+
+    // Log public key bundle for debugging
+    console.log("[Debug] Public Key Bundle:", {
+      preQuantum: {
+        identityKemPublicKey: userPublicBundle.preQuantum.identityKemPublicKey
+          .export({ format: "der", type: "spki" })
+          .toString("base64"),
+        identitySigningPublicKey:
+          userPublicBundle.preQuantum.identitySigningPublicKey
+            .export({ format: "der", type: "spki" })
+            .toString("base64"),
+      },
+      postQuantum: {
+        identitySigningPublicKey:
+          userPublicBundle.postQuantum.identitySigningPublicKey
+            .slice(0, 10)
+            .toString() + "...", // Shortened for brevity
+      },
+    });
 
     // use provided body or read from request
     const requestBody = body !== undefined ? body : await req.clone().text();
