@@ -237,67 +237,80 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     qDebug() << "[TRACE]   → pqSig size =" << pqSig.size()
              << ", pqSigB64 length =" << pqSigB64.size();
 
-    // ── 10) Build the JSON body that the server’s Zod schema expects ──────────
-    qDebug() << "[TRACE] 10) build jbody JSON";
-    json jbody;
-    try {
-        jbody["file_content"]           = fileB64;
-        jbody["metadata"]               = metaB64;
-        jbody["pre_quantum_signature"]  = edSigB64;
-        jbody["post_quantum_signature"] = pqSigB64;
-    }
-    catch (const std::exception& ex) {
-        qWarning() << "[ERROR] constructing jbody threw:" << ex.what();
-        return 0;
-    }
-    std::string bodyString = jbody.dump();
-    qDebug() << "[TRACE]   → bodyString length =" << int(bodyString.size());
+    // ── 10) Build **one** raw JSON string, exactly in this order:
+    nlohmann::json jbody;
+    jbody["file_content"]           = fileB64;
+    jbody["metadata"]               = metaB64;
+    jbody["pre_quantum_signature"]  = edSigB64;
+    jbody["post_quantum_signature"] = pqSigB64;
 
-    // ── 11) Canonical request string for “authentication” ─────────────────────
-    qDebug() << "[TRACE] 11) build canonical string";
-    const auto nowUtc = QDateTime::currentDateTimeUtc();
-    QString isoTsQt  = nowUtc.toString(Qt::ISODate) + "Z";
-    std::string timestamp = isoTsQt.toStdString();
+    // Dump the JSON text ONE TIME and store it verbatim:
+    std::string bodyString = jbody.dump(/* you may pass no arguments to ensure no extra whitespace */);
+    qDebug() << "[CLIENT] bodyString (len=" << bodyString.size() << "):"
+             << QString::fromStdString(bodyString);
 
+    // ── 11) Build canonical = username|timestamp|POST|/api/fs/upload|bodyString
+    //      Make sure we use exactly the same path that the server sees:
+    const QString qsNow = QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + "Z";
+    std::string timestamp = qsNow.toStdString();
     std::ostringstream canon;
-    canon << m_username << "|"
-          << timestamp   << "|"
-          << "POST"      << "|"
-          << "/api/fs/upload" << "|"
-          << bodyString;
-    std::string canonicalString = canon.str();
-    qDebug() << "[TRACE]   → canonical length =" << int(canonicalString.size());
+    canon << m_username      // “alice”, for example
+          << "|" << timestamp // e.g. “2025-06-02T18:47:12Z”
+          << "|" << "POST"
+          << "|" << "/api/fs/upload"
+          << "|" << bodyString;
+    const std::string canonicalString = canon.str();
+    qDebug() << "[CLIENT] canonicalString (len=" << canonicalString.size() << "):"
+             << QString::fromStdString(canonicalString);
 
-    // ── 12) Build dual signatures over canonicalString ────────────────────────
-    qDebug() << "[TRACE] 12) sign canonicalString";
-    std::vector<uint8_t> canonBytes(canonicalString.begin(), canonicalString.end());
-    std::vector<uint8_t> preAuthSig, postAuthSig;
+    // ── 12) Sign “canonicalString” with Ed25519 and Dilithium (post‐quantum)
+    //      exactly as Bun’s helper does. For example:
+    std::vector<uint8_t> preAuthSig;   // raw bytes of Ed25519(canonicalString)
+    std::vector<uint8_t> postAuthSig;  // raw bytes of Dilithium(canonicalString)
 
-    try {
-        preAuthSig  = signerEd.sign(canonBytes);
-        postAuthSig = signerPQ.sign(canonBytes);
+    {
+        // (a) Ed25519:
+        Signer_Ed signerEd;
+        signerEd.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
+        preAuthSig = signerEd.sign(
+            std::vector<uint8_t>(canonicalString.begin(),
+                                 canonicalString.end())
+            );
     }
-    catch (const std::exception& ex) {
-        qWarning() << "[ERROR] signing canonical threw:" << ex.what();
-        return 0;
+
+    {
+        // (b) Dilithium:
+        Signer_Dilithium signerPQ;
+        signerPQ.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
+        postAuthSig = signerPQ.sign(
+            std::vector<uint8_t>(canonicalString.begin(),
+                                 canonicalString.end())
+            );
     }
 
+    // Base64‐encode each:
     std::string preAuthSigB64  = FileClientData::base64_encode(preAuthSig.data(),  preAuthSig.size());
     std::string postAuthSigB64 = FileClientData::base64_encode(postAuthSig.data(), postAuthSig.size());
     std::string combinedAuthSig = preAuthSigB64 + "||" + postAuthSigB64;
-    qDebug() << "[TRACE]   → combinedAuthSig length =" << combinedAuthSig.size();
+    qDebug() << "[CLIENT] combinedAuthSig length =" << combinedAuthSig.size();
 
-    // ── 13) Build the headers for the POST ───────────────────────────────────
-    qDebug() << "[TRACE] 13) prepare HTTP headers";
+    // ── 13) Build headers exactly as Bun expects:
+    //
+    //     "Content-Type":    "application/json"
+    //     "Host":            "localhost:3000"
+    //     "X-Username":      m_username
+    //     "X-Timestamp":     timestamp
+    //     "X-Signature":     combinedAuthSig
+    //
     std::map<std::string, std::string> headers = {
-        { "Content-Type",  "application/json"              },
-        { "X-Username",    m_username                       },
-        { "X-Timestamp",   timestamp                        },
-        { "X-Signature",   combinedAuthSig                  }
+        { "Host",           "localhost:3000" },
+        { "Content-Type",   "application/json" },
+        { "X-Username",     m_username        },
+        { "X-Timestamp",    timestamp         },
+        { "X-Signature",    combinedAuthSig   }
     };
 
-    // ── 14) Send the HTTP POST to /api/fs/upload ────────────────────────────
-    qDebug() << "[TRACE] 14) AsioHttpClient.sendRequest()";
+    // ── 14) Send the HTTP POST to “/api/fs/upload”
     HttpRequest req(
         HttpRequest::Method::POST,
         "/api/fs/upload",
@@ -306,18 +319,12 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         );
 
     AsioHttpClient httpClient;
-    httpClient.init("");
-    HttpResponse resp;
-    try {
-        resp = httpClient.sendRequest("localhost", 3000, req);
-    }
-    catch (const std::exception& ex) {
-        qWarning() << "[ERROR] HTTP sendRequest() threw:" << ex.what();
-        return 0;
-    }
+    httpClient.init(""); // no TLS
+    HttpResponse resp = httpClient.sendRequest("localhost", 3000, req);
 
-    qDebug() << "[TRACE]   → HTTP status code =" << resp.statusCode;
-    qDebug() << "[TRACE]   → HTTP body =" << QString::fromStdString(resp.body);
+    qDebug() << "[CLIENT]   → HTTP status code =" << resp.statusCode;
+    qDebug() << "[CLIENT]   → HTTP body =" << QString::fromStdString(resp.body);
+
 
     if (resp.statusCode == 201) {
         qDebug() << "[TRACE] 15) server returned 201, parsing file_id";
