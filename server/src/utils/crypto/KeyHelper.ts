@@ -108,29 +108,64 @@ export function serializeKeyBundlePublic(
   };
 }
 
+function logErrorDetails(context: string, error: unknown) {
+  console.error(`[Error] Context: ${context}`);
+  if (error instanceof Error) {
+    console.error(`[Error Details] Message: ${error.message}`);
+    console.error(`[Error Details] Stack: ${error.stack}`);
+  } else {
+    console.error(`[Error Details]`, error);
+  }
+}
+
 export function deserializeKeyBundlePublic(
   serialized: z.infer<typeof KeyBundlePublicSerializable>
 ): KeyBundlePublic {
-  return {
-    preQuantum: {
-      identityKemPublicKey: createPublicKey({
-        key: Buffer.from(serialized.preQuantum.identityKemPublicKey, "base64"),
-        format: "der",
-        type: "spki",
-      }),
-      identitySigningPublicKey: createPublicKey({
-        key: Buffer.from(
-          serialized.preQuantum.identitySigningPublicKey,
-          "base64"
+  try {
+    console.log("[Debug] Serialized Key Bundle:", serialized);
+
+    const kemKeyBuffer = Buffer.from(
+      serialized.preQuantum.identityKemPublicKey,
+      "base64"
+    );
+    const signingKeyBuffer = Buffer.from(
+      serialized.preQuantum.identitySigningPublicKey,
+      "base64"
+    );
+
+    console.log("[Debug] Decoded KEM Key Buffer:", kemKeyBuffer);
+    console.log("[Debug] Decoded Signing Key Buffer:", signingKeyBuffer);
+
+    // Validate key buffers
+    if (kemKeyBuffer.length === 0 || signingKeyBuffer.length === 0) {
+      console.error("[Error] Key buffer is empty or invalid:", {
+        kemKeyBuffer,
+        signingKeyBuffer,
+      });
+      throw new Error("Key buffer is empty or invalid");
+    }
+
+    return {
+      preQuantum: {
+        identityKemPublicKey: createPublicKey({
+          key: kemKeyBuffer,
+          format: "der",
+          type: "spki",
+        }),
+        identitySigningPublicKey: createPublicKey({
+          key: signingKeyBuffer,
+          format: "der",
+          type: "spki",
+        }),
+      },
+      postQuantum: {
+        identitySigningPublicKey: new Uint8Array(
+          Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
         ),
-        format: "der",
-        type: "spki",
-      }),
-    },
-    postQuantum: {
-      identitySigningPublicKey: new Uint8Array(
-        Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
-      ),
-    },
-  };
+      },
+    };
+  } catch (error) {
+    logErrorDetails("Deserialize Key Bundle Public", error);
+    throw error;
+  }
 }

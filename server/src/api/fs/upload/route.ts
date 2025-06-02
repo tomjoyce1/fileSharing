@@ -150,6 +150,16 @@ async function insertFileRecord(
   }
 }
 
+function logErrorDetails(context: string, error: unknown) {
+  console.error(`[Error] Context: ${context}`);
+  if (error instanceof Error) {
+    console.error(`[Error Details] Message: ${error.message}`);
+    console.error(`[Error Details] Stack: ${error.stack}`);
+  } else {
+    console.error(`[Error Details]`, error);
+  }
+}
+
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
@@ -164,82 +174,19 @@ export async function POST(
     post_quantum_signature,
   } = req.validated.body;
 
-  // Log all received fields for debugging
-  console.log("[UPLOAD] Received upload request:", {
-    file_content_length: file_content.length,
-    metadata_length: metadata.length,
-    pre_quantum_signature,
-    post_quantum_signature,
-    headers: Object.fromEntries(req.headers.entries()),
-    body: req.validated.body,
-  });
-
-  // Check for required headers
-  const xUsername = req.headers.get("x-username");
-  const xTimestamp = req.headers.get("x-timestamp");
-  const xSigPre = req.headers.get("x-signature-prequantum");
-  const xSigPost = req.headers.get("x-signature-postquantum");
-  const xSignature = req.headers.get("x-signature");
-  console.log("[UPLOAD] Header values:", {
-    xUsername,
-    xTimestamp,
-    xSigPre,
-    xSigPost,
-    xSignature,
-  });
-  if (!xUsername || !xTimestamp || !xSigPre || !xSigPost) {
-    console.log("[UPLOAD] Missing required signature headers", {
-      xUsername,
-      xTimestamp,
-      xSigPre,
-      xSigPost,
-      xSignature,
-      allHeaders: Object.fromEntries(req.headers.entries()),
-    });
-    return Response.json(
-      { message: "Missing required signature headers" },
-      { status: 400 }
-    );
-  }
-
-  // Check timestamp is within 5 minutes of server time
-  const now = Date.now();
-  const clientTimestamp = parseInt(xTimestamp, 10);
-  console.log("[UPLOAD] Timestamp check:", {
-    now,
-    clientTimestamp,
-    diff: Math.abs(now - clientTimestamp),
-  });
-  if (
-    isNaN(clientTimestamp) ||
-    Math.abs(now - clientTimestamp) > 5 * 60 * 1000
-  ) {
-    console.log("[UPLOAD] Timestamp out of sync", { now, clientTimestamp });
-    return Response.json({ message: "Timestamp out of sync" }, { status: 400 });
-  }
-
   // Authenticate user and get user from database
-  console.log("[UPLOAD] Authenticating user:", {
-    xUsername,
-    body: req.validated.body,
-  });
   const userResult = await getAuthenticatedUserFromRequest(
     req,
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    console.log("[UPLOAD] User authentication failed:", userResult.error);
-    return Response.json({ message: "Unauthorized a" }, { status: 401 });
+    return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   const user = userResult.value;
-  console.log("[UPLOAD] Authenticated user:", user);
 
   // ensure file size is within limit
   if (file_content.length > MAX_FILE_SIZE) {
-    console.log("[UPLOAD] File too large", {
-      file_content_length: file_content.length,
-    });
     return Response.json({ message: "File too large" }, { status: 413 });
   }
 
@@ -247,18 +194,6 @@ export async function POST(
   const userPublicBundle = deserializeKeyBundlePublic(
     JSON.parse(user.public_key_bundle.toString())
   );
-
-  // Create the dataToSign buffer as the client does
-  const dataToSign = createFileSignature(user.user_id, file_content, metadata);
-  console.log("[UPLOAD] Received signatures:", {
-    preQuantum: pre_quantum_signature,
-    postQuantum: post_quantum_signature,
-    dataToSign: Buffer.from(dataToSign).toString("base64"),
-    user_id: user.user_id,
-    file_content,
-    metadata,
-    userPublicBundle,
-  });
 
   const signatureResult = verifyFileSignatures(
     user.user_id,
@@ -309,10 +244,6 @@ export async function POST(
     );
   }
 
-  console.log(
-    "[UPLOAD] File uploaded successfully. File ID:",
-    insertResult.value
-  );
   return Response.json(
     {
       message: "File uploaded successfully",

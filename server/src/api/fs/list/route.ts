@@ -123,7 +123,6 @@ async function getAccessibleFiles(
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
-  console.log("[Route Debug] /api/fs/list POST called"); // Log when route is hit
   if (!req.validated?.body) {
     return Response.json({ message: "Internal Server Error" }, { status: 500 });
   }
@@ -135,10 +134,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    return Response.json(
-      { message: "Unauthorized, hit the server" },
-      { status: 401 }
-    );
+    return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   // get accessible files with page-based pagination

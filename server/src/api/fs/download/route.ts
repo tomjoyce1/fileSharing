@@ -127,6 +127,16 @@ function readFileContent(storage_path: string): Result<string, APIError> {
   }
 }
 
+function logErrorDetails(context: string, error: unknown) {
+  console.error(`[Error] Context: ${context}`);
+  if (error instanceof Error) {
+    console.error(`[Error Details] Message: ${error.message}`);
+    console.error(`[Error Details] Stack: ${error.stack}`);
+  } else {
+    console.error(`[Error Details]`, error);
+  }
+}
+
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
@@ -142,7 +152,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    return Response.json({ message: "Unauthorized hittin gserv" }, { status: 401 });
+    return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   const user = userResult.value;
@@ -163,6 +173,7 @@ export async function POST(
   const fileContentResult = readFileContent(file.storage_path);
   if (fileContentResult.isErr()) {
     const apiError = fileContentResult.error;
+    logErrorDetails("Read File Content", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
