@@ -28,41 +28,102 @@ async function saveKeyToIndexedDB(
   data: Uint8Array,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("DriveKeysDB", 1);
+    // Update IndexedDB version to match the existing version (2)
+    const request = indexedDB.open("DriveKeysDB", 2);
 
-    request.onupgradeneeded = () => {
+    // Ensure the object store is created properly during onupgradeneeded
+    request.onupgradeneeded = (event) => {
       const db = request.result;
+      console.log(`[DB] onupgradeneeded triggered. Old version: ${event.oldVersion}, New version: ${event.newVersion}`);
       if (!db.objectStoreNames.contains("keys")) {
+        console.log("[DB] Creating 'keys' object store...");
         db.createObjectStore("keys");
+      } else {
+        console.log("[DB] 'keys' object store already exists.");
       }
     };
-console.log("[DB] Saving key to IndexedDB:", key, {
-  type: typeof data,
-  instanceOfUint8Array: data instanceof Uint8Array,
-  length: data.length,
-  data,
-});
-  request.onsuccess = () => {
+
+    // Check for the existence of the 'keys' object store in the onsuccess handler
+    request.onsuccess = () => {
       const db = request.result;
-      const tx = db.transaction("keys", "readwrite");
-      const store = tx.objectStore("keys");
-      store.put(data, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+      console.log(`[DB] Opened database successfully. Version: ${db.version}`);
+
+      if (!db.objectStoreNames.contains("keys")) {
+        console.error("[DB] 'keys' object store is missing. Deleting and recreating the database.");
+        db.close();
+        indexedDB.deleteDatabase("DriveKeysDB").onsuccess = () => {
+          console.log("[DB] Database deleted successfully. Recreating...");
+          const recreateRequest = indexedDB.open("DriveKeysDB", 2);
+          recreateRequest.onupgradeneeded = (event) => {
+            const newDb = recreateRequest.result;
+            console.log(`[DB] Recreating 'keys' object store during onupgradeneeded. Old version: ${event.oldVersion}, New version: ${event.newVersion}`);
+            newDb.createObjectStore("keys");
+          };
+          recreateRequest.onsuccess = () => {
+            console.log("[DB] Database recreated successfully.");
+            resolve();
+          };
+          recreateRequest.onerror = () => {
+            console.error("[DB] Failed to recreate the database.", recreateRequest.error);
+            reject(recreateRequest.error);
+          };
+        };
+      } else {
+        try {
+          const tx = db.transaction("keys", "readwrite");
+          const store = tx.objectStore("keys");
+          store.put(data, key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        } catch (error) {
+          console.error("[DB] Transaction error:", error);
+          reject(error);
+        }
+      }
     };
 
-    request.onerror = () => reject(request.error);
+    // Handle VersionError by deleting and recreating the database
+    request.onerror = (event) => {
+      const target = event.target as IDBRequest | null;
+      const error = target?.error;
+      if (error?.name === "VersionError") {
+        console.error("[DB] VersionError occurred. Deleting and recreating the database.");
+        indexedDB.deleteDatabase("DriveKeysDB").onsuccess = () => {
+          console.log("[DB] Database deleted successfully. Recreating...");
+          const recreateRequest = indexedDB.open("DriveKeysDB", 2);
+          recreateRequest.onupgradeneeded = (event) => {
+            const newDb = recreateRequest.result;
+            console.log(`[DB] Recreating 'keys' object store during onupgradeneeded. Old version: ${event.oldVersion}, New version: ${event.newVersion}`);
+            newDb.createObjectStore("keys");
+          };
+          recreateRequest.onsuccess = () => {
+            console.log("[DB] Database recreated successfully.");
+            resolve();
+          };
+          recreateRequest.onerror = () => {
+            console.error("[DB] Failed to recreate the database.", recreateRequest.error);
+            reject(recreateRequest.error);
+          };
+        };
+      } else {
+        console.error("[DB] Request error:", error);
+        reject(error);
+      }
+    };
   });
 }
 
 // Retrieve Uint8Array data from IndexedDB
 async function getKeyFromIndexedDB(key: string): Promise<Uint8Array | null> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("DriveKeysDB", 1);
+    // Update IndexedDB version to match the existing version (2)
+    const request = indexedDB.open("DriveKeysDB", 2);
 
-    request.onupgradeneeded = () => {
+    // Ensure the object store is created properly during onupgradeneeded
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains("keys")) {
+        console.log("[DB] Creating 'keys' object store...");
         db.createObjectStore("keys");
       }
     };
@@ -315,18 +376,18 @@ console.log("mldsaTest length:", mldsaTest?.length);
           const x25519Raw = await getKeyFromIndexedDB(
             `${username}_x25519_priv`,
           );
-          const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
-          console.log("[Login] Retrieved from IndexedDB:", {
-            ed: edRaw,
-            x25519: x25519Raw,
-            mldsa: mldsaRaw
-          });
-          console.log("[Login] Retrieved mldsaRaw:", mldsaRaw);
-          console.log("[Login] Type:", typeof mldsaRaw);
-          console.log("[Login] Is Uint8Array:", mldsaRaw instanceof Uint8Array);
-          console.log("[Login] Length:", mldsaRaw?.length);
+          try {
+            const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
+            console.log("[Login] Retrieved from IndexedDB:", {
+              ed: edRaw,
+              x25519: x25519Raw,
+              mldsa: mldsaRaw,
+            });
+          } catch (error) {
+            console.error("[Login] Error retrieving keys:", error);
+          }
 
-          if (!edRaw || !x25519Raw || !mldsaRaw) {
+          if (!edRaw || !x25519Raw) {
             setError("No keys found for this user. Please register first.");
             setLoading(false);
             return;

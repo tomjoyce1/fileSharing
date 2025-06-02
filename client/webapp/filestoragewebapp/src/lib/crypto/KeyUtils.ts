@@ -44,7 +44,7 @@ export async function openKeyDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     try {
       const dbName = "DriveKeysDB";
-      const dbVersion = 1;
+      const dbVersion = 2; // Updated to the latest version
       console.log(`[KeyUtils] openKeyDB: Opening IndexedDB dbName=${dbName}, dbVersion=${dbVersion}`);
       const request = indexedDB.open(dbName, dbVersion);
 
@@ -60,9 +60,32 @@ export async function openKeyDB(): Promise<IDBDatabase> {
         console.log(`[KeyUtils] openKeyDB: Successfully opened dbName=${dbName}`);
         resolve(request.result);
       };
-      request.onerror = () => {
-        console.error(`[KeyUtils] openKeyDB: Failed to open dbName=${dbName}`, request.error);
-        reject(new KeyError("Failed to open database", request.error as Error));
+
+      request.onerror = (event) => {
+        const error = event.target as IDBRequest | null;
+        if (error?.error?.name === "VersionError") {
+          console.error(`[KeyUtils] openKeyDB: VersionError occurred. Deleting and recreating the database.`);
+          indexedDB.deleteDatabase(dbName).onsuccess = () => {
+            console.log(`[KeyUtils] openKeyDB: Database deleted successfully. Recreating...`);
+            const recreateRequest = indexedDB.open(dbName, dbVersion);
+            recreateRequest.onupgradeneeded = () => {
+              const newDb = recreateRequest.result;
+              newDb.createObjectStore("keys");
+              console.log(`[KeyUtils] openKeyDB: Recreated object store 'keys' in dbName=${dbName}`);
+            };
+            recreateRequest.onsuccess = () => {
+              console.log(`[KeyUtils] openKeyDB: Database recreated successfully.`);
+              resolve(recreateRequest.result);
+            };
+            recreateRequest.onerror = () => {
+              console.error(`[KeyUtils] openKeyDB: Failed to recreate the database.`, recreateRequest.error);
+              reject(new KeyError("Failed to recreate database", recreateRequest.error as Error));
+            };
+          };
+        } else {
+          console.error(`[KeyUtils] openKeyDB: Failed to open dbName=${dbName}`, request.error);
+          reject(new KeyError("Failed to open database", request.error as Error));
+        }
       };
     } catch (err) {
       console.error(`[KeyUtils] openKeyDB: Exception thrown`, err);
