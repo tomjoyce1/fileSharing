@@ -84,6 +84,22 @@ const uploadBody = {
       }
       const signatureHeader = `${preSigB64}||${postSigB64}`;
 
+
+    //   loggin
+
+    console.log("[Upload Debug] username:", username);
+console.log("[Upload Debug] timestamp:", timestamp);
+console.log("[Upload Debug] canonicalString:", canonicalString);
+console.log("[Upload Debug] uploadBody:", uploadBody);
+console.log("[Upload Debug] Ed25519 signature (header, base64):", preSigB64);
+console.log("[Upload Debug] ML-DSA signature (header, base64):", postSigB64);
+console.log("[Upload Debug] X-Signature header:", signatureHeader);
+console.log("[Upload Debug] Ed25519 key length:", edPrivateKey.length, "first bytes:", Array.from(edPrivateKey).slice(0, 8));
+if (typeof mldsaKey !== 'undefined') {
+  console.log("[Upload Debug] ML-DSA key length:", mldsaKey.length, "first bytes:", Array.from(mldsaKey).slice(0, 8));
+}
+
+
       // --- Step 4: Send request ---
       const response = await fetch('/api/fs/upload', {
         method: 'POST',
