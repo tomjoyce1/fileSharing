@@ -1,5 +1,6 @@
 import sodium from "libsodium-wrappers";
 import { getKeyFromIndexedDB } from "@/lib/crypto/KeyUtils";
+import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 
 export async function fetchFiles(
   pageNumber: number,
@@ -13,26 +14,37 @@ export async function fetchFiles(
   try {
     setIsLoading(true);
     setError(null);
-    const message = JSON.stringify({ page: pageNumber });
+    const body = { page: pageNumber };
+    const bodyString = JSON.stringify(body);
     await sodium.ready;
     const edPrivateKey = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-    if (!edPrivateKey) {
+    const mldsaPrivateKey = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+    if (!edPrivateKey || !mldsaPrivateKey) {
       setError("Your login keys are not available yet. Please wait a moment and click Retry.");
       return;
     }
-    const dataToSign = new TextEncoder().encode(message);
-    const signature = Buffer.from(
-      sodium.crypto_sign_detached(dataToSign, edPrivateKey)
+    const timestamp = Date.now().toString();
+    const canonicalString = `${username}|${timestamp}|POST|/api/fs/list|${bodyString}`;
+    const canonicalBytes = new TextEncoder().encode(canonicalString);
+    // Ed25519 signature
+    const preQuantumSig = Buffer.from(
+      sodium.crypto_sign_detached(canonicalBytes, edPrivateKey)
+    ).toString("base64");
+    // ML-DSA-87 signature
+    const postQuantumSig = Buffer.from(
+      ml_dsa87.sign(mldsaPrivateKey, canonicalBytes)
     ).toString("base64");
     const headers = {
       "Content-Type": "application/json",
       "X-Username": username,
-      "X-Signature": signature,
+      "X-Timestamp": timestamp,
+      "X-Signature-PreQuantum": preQuantumSig,
+      "X-Signature-PostQuantum": postQuantumSig,
     };
     const response = await fetch("/api/fs/list", {
       method: "POST",
       headers,
-      body: message,
+      body: bodyString,
     });
     if (response.status === 401) {
       const errorText = await response.text();

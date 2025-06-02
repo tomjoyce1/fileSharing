@@ -60,26 +60,15 @@ export async function saveKeyToIndexedDB(
   if (!(keyData instanceof Uint8Array)) {
     throw new KeyError(`Invalid key data type: ${typeof keyData}`);
   }
-
+  // NOTE: For real password-based encryption, use a proper KDF and encrypt the key before storage.
   try {
     await sodium.ready;
-    const hashedKey = sodium.crypto_pwhash(
-      keyData.length,
-      keyData,
-      password,
-      sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-      sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE,
-      sodium.crypto_pwhash_ALG_DEFAULT
-    );
-
     const db = await openKeyDB();
     return new Promise<void>((resolve, reject) => {
-      console.log(`[KeyUtils] saveKeyToIndexedDB: Saving keyName=${keyName}, dataLen=${hashedKey.length}`);
+      console.log(`[KeyUtils] saveKeyToIndexedDB: Saving keyName=${keyName}, dataLen=${keyData.length}`);
       const tx = db.transaction("keys", "readwrite");
       const store = tx.objectStore("keys");
-
-      const request = store.put(hashedKey, keyName);
-
+      const request = store.put(keyData, keyName);
       request.onsuccess = () => {
         console.log(`[KeyUtils] saveKeyToIndexedDB: Successfully saved keyName=${keyName}`);
         resolve();
@@ -88,7 +77,6 @@ export async function saveKeyToIndexedDB(
         console.error(`[KeyUtils] saveKeyToIndexedDB: Failed to save keyName=${keyName}`, request.error);
         reject(new KeyError("Failed to save key", request.error as Error));
       };
-
       tx.oncomplete = () => {
         db.close();
         console.log(`[KeyUtils] saveKeyToIndexedDB: Transaction complete, db closed`);
@@ -118,29 +106,18 @@ export async function getKeyFromIndexedDB(
       const tx = db.transaction("keys", "readonly");
       const store = tx.objectStore("keys");
       const request = store.get(keyName);
-
       request.onsuccess = async () => {
-        const hashedKey = request.result;
-        if (hashedKey instanceof Uint8Array) {
-          await sodium.ready;
-          const originalKey = sodium.crypto_pwhash(
-            hashedKey.length,
-            hashedKey,
-            password,
-            sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-            sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE,
-            sodium.crypto_pwhash_ALG_DEFAULT
-          );
-          resolve(originalKey);
+        const storedKey = request.result;
+        if (storedKey instanceof Uint8Array) {
+          // NOTE: For real password-based encryption, decrypt the key here using the password.
+          resolve(storedKey);
         } else {
           resolve(null);
         }
       };
-
       request.onerror = () => {
         reject(new KeyError("Failed to retrieve key", request.error as Error));
       };
-
       tx.oncomplete = () => {
         db.close();
       };
