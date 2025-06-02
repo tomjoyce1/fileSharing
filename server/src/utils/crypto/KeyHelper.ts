@@ -172,10 +172,12 @@ export function deserializeKeyBundlePublic(
           kemKeyBuffer,
         ]);
 
-    const signingKey = isPemSigning
+    const isAlreadyDER =
+      signingKeyBuffer.length === 44 && signingKeyBuffer[0] === 0x30;
+    const signingKey = isAlreadyDER
       ? signingKeyBuffer
       : Buffer.concat([
-          Buffer.from("302a300506032b6570032100", "hex"), // ASN.1 header for Ed25519
+          Buffer.from("302a300506032b6570032100", "hex"),
           signingKeyBuffer,
         ]);
 
@@ -203,3 +205,5 @@ export function deserializeKeyBundlePublic(
     throw error;
   }
 }
+
+
