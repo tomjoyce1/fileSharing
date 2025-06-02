@@ -90,7 +90,7 @@ function cleanupFile(storage_path: string): void {
 }
 
 function verifyFileSignatures(
-  user_id: number,
+  username: string,
   file_content: string,
   metadata: string,
   pre_quantum_signature: string,
@@ -98,7 +98,7 @@ function verifyFileSignatures(
   userPublicBundle: KeyBundlePublic
 ): Result<void, APIError> {
   try {
-    const dataToSign = createFileSignature(user_id, file_content, metadata);
+    const dataToSign = createFileSignature(username, file_content, metadata);
 
     const preQuantumValid = verify(
       null,
@@ -190,7 +190,7 @@ export async function POST(
   );
 
   const signatureResult = verifyFileSignatures(
-    user.user_id,
+    user.username,
     file_content,
     metadata,
     pre_quantum_signature,

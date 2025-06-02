@@ -53,7 +53,7 @@ describe("File Sharing API", () => {
 
     const userA = harness.getUser("userA");
     const signaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -119,7 +119,7 @@ describe("File Sharing API", () => {
 
     // Verify original downloaded content (should be valid)
     const originalSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -133,7 +133,7 @@ describe("File Sharing API", () => {
 
     // Verify tampered content (should be invalid)
     const tamperedSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       tamperedFileContentBase64,
       downloadData.metadata, // Use metadata from download
       downloadData.pre_quantum_signature, // Use signature from download
@@ -182,7 +182,7 @@ describe("File Sharing API", () => {
 
     // Verify with the fake key bundle (should be invalid)
     const signaturesValidWithFakeKey = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -194,7 +194,7 @@ describe("File Sharing API", () => {
 
     // Verify with the correct key bundle (should be valid)
     const correctSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -319,5 +319,84 @@ describe("File Sharing API", () => {
     expect(
       listData.fileData[0].shared_access.ephemeral_public_key
     ).toBeDefined();
+  });
+
+  test("server cannot substitute different user's file content", async () => {
+    const userA = await harness.createUser("userA");
+    await harness.createUser("userB");
+    await harness.createUser("userC");
+
+    // UserA uploads and shares a file with userB
+    const userAContent = "userA's secret file content";
+    const userAUpload = await harness.uploadFile("userA", userAContent, {
+      filename: "userA_file.txt",
+    });
+
+    const shareResponse = await harness.shareFile(
+      "userA",
+      "userB",
+      userAUpload.file_id,
+      userAUpload.test_data.client_data.fek,
+      userAUpload.test_data.client_data.mek,
+      userAUpload.test_data.client_data.fileNonce,
+      userAUpload.test_data.client_data.metadataNonce
+    );
+    harness.expectSuccessfulResponse(shareResponse, 201);
+
+    // UserC uploads a different file (this simulates malicious content the server might substitute)
+    const userCContent = "userC's malicious file content";
+    const userCUpload = await harness.uploadFile("userC", userCContent, {
+      filename: "userC_file.txt",
+    });
+
+    // UserB downloads userA's file
+    const downloadResponse = await harness.downloadFile(
+      "userB",
+      userAUpload.file_id
+    );
+    harness.expectSuccessfulResponse(downloadResponse);
+    const downloadData = (await downloadResponse.json()) as any;
+
+    // Get userA's public key bundle (what userB should use to verify)
+    const keyBundleResponse = await harness.getUserKeyBundle("userA", "userB");
+    harness.expectSuccessfulResponse(keyBundleResponse);
+    const keyBundleData = (await keyBundleResponse.json()) as any;
+    const userAPublicKeyBundle = deserializeKeyBundlePublic(
+      keyBundleData.key_bundle
+    );
+
+    // First verify that the legitimate file content passes signature verification
+    const legitSignaturesValid = harness.verifyFileSignatures(
+      userA.dbUser.username,
+      downloadData.file_content,
+      downloadData.metadata,
+      downloadData.pre_quantum_signature,
+      downloadData.post_quantum_signature,
+      userAPublicKeyBundle
+    );
+    expect(legitSignaturesValid).toBe(true);
+
+    // Now simulate server attack: substitute userC's file content while keeping userA's signatures
+    // This would happen if a malicious server tried to give userB different content than what userA shared
+    const maliciousSignaturesValid = harness.verifyFileSignatures(
+      userA.dbUser.username, // Server claims this is still from userA
+      userCUpload.test_data.encrypted_file_content, // But substitutes userC's content
+      downloadData.metadata, // Keep userA's metadata
+      downloadData.pre_quantum_signature, // Keep userA's signatures
+      downloadData.post_quantum_signature,
+      userAPublicKeyBundle // UserB still has userA's key bundle
+    );
+    expect(maliciousSignaturesValid).toBe(false);
+
+    // Also test substituting both content and metadata from userC
+    const fullSubstitutionSignaturesValid = harness.verifyFileSignatures(
+      userA.dbUser.username, // Server still claims this is from userA
+      userCUpload.test_data.encrypted_file_content, // userC's content
+      userCUpload.test_data.encrypted_metadata, // userC's metadata
+      downloadData.pre_quantum_signature, // But userA's signatures
+      downloadData.post_quantum_signature,
+      userAPublicKeyBundle // UserB has userA's key bundle
+    );
+    expect(fullSubstitutionSignaturesValid).toBe(false);
   });
 });
