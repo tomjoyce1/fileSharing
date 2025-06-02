@@ -53,7 +53,7 @@ describe("File Sharing API", () => {
 
     const userA = harness.getUser("userA");
     const signaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -119,7 +119,7 @@ describe("File Sharing API", () => {
 
     // Verify original downloaded content (should be valid)
     const originalSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -133,7 +133,7 @@ describe("File Sharing API", () => {
 
     // Verify tampered content (should be invalid)
     const tamperedSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       tamperedFileContentBase64,
       downloadData.metadata, // Use metadata from download
       downloadData.pre_quantum_signature, // Use signature from download
@@ -182,7 +182,7 @@ describe("File Sharing API", () => {
 
     // Verify with the fake key bundle (should be invalid)
     const signaturesValidWithFakeKey = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
@@ -194,7 +194,7 @@ describe("File Sharing API", () => {
 
     // Verify with the correct key bundle (should be valid)
     const correctSignaturesValid = harness.verifyFileSignatures(
-      userA.dbUser.user_id,
+      userA.dbUser.username,
       downloadData.file_content,
       downloadData.metadata,
       downloadData.pre_quantum_signature,
