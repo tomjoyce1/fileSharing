@@ -7,6 +7,26 @@
 #include <QMetaObject>    // for QMetaObject::invokeMethod
 #include <QDebug>
 
+// NEW: hash helper
+#include "../utils/crypto/Hash.h"
+
+namespace {
+// ──────────────────────────────────────────────────────────────────────────
+// Convert a byte vector to lower‑case hex (two chars per byte, no 0x).
+// This matches Node's `digest('hex')` output.
+// ──────────────────────────────────────────────────────────────────────────
+std::string toHex(const std::vector<uint8_t>& data) {
+    static const char* lut = "0123456789abcdef";
+    std::string out;
+    out.reserve(data.size() * 2);
+    for (uint8_t b : data) {
+        out.push_back(lut[b >> 4]);
+        out.push_back(lut[b & 0x0F]);
+    }
+    return out;
+}
+} // namespace
+
 FileUploadHandler::FileUploadHandler(ClientStore* store, QObject* parent)
     : QObject(parent)
     , m_store(store)
@@ -131,8 +151,8 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     std::copy(encMeta.iv.begin(), encMeta.iv.end(), fcd.metadata_nonce.begin());
     qDebug() << "[TRACE]   → metadata encrypted; ciphertext bytes =" << encMeta.data.size();
 
-    // ── 6) Base64-encode *only* the ciphertext bytes (not the IVs) ───────────
-    qDebug() << "[TRACE] 6) Base64‐encode ciphertexts";
+    // ── 6) Base64‑encode only ciphertext bytes (not IVs) ─────────────────────
+    qDebug() << "[TRACE] 6) Base64‑encode ciphertexts";
     auto encodeB64 = [&](const std::vector<uint8_t>& buf) {
         return FileClientData::base64_encode(buf.data(), buf.size());
     };
@@ -148,13 +168,14 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     qDebug() << "[TRACE]   → fileB64 length =" << int(fileB64.size())
              << ", metaB64 length =" << int(metaB64.size());
 
-    // ── 7) Build the “file_signature_input” = userId|fileB64|metaB64 ─────────
+    // ── 7) Build the signature input = username|sha256(encFile)|sha256(encMeta)
     qDebug() << "[TRACE] 7) buildSignatureInput()";
     std::string sigInput = buildSignatureInput(m_username, fileB64, metaB64);
     std::vector<uint8_t> msgBytes(sigInput.begin(), sigInput.end());
     qDebug() << "[TRACE]   → signature input length =" << int(msgBytes.size());
 
-    // ── 8) ED25519 sign that sigInput using *your registered* private key ───
+    // ── 8) ED25519 sign that sigInput ────────────────────────────────────────
+    // (unchanged code follows) ------------------------------------------------
     qDebug() << "[TRACE] 8) ED25519 sign";
     std::string edPrivB64;
     std::vector<uint8_t> edPrivRaw;
@@ -167,11 +188,9 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         return 0;
     }
     if (edPrivRaw.size() != static_cast<size_t>(crypto_sign_SECRETKEYBYTES)) {
-        qWarning() << "[ERROR] ED25519 private‐key length is wrong:"
-                   << edPrivRaw.size() << "bytes (expected" << crypto_sign_SECRETKEYBYTES << ")";
+        qWarning() << "[ERROR] ED25519 private‑key length is wrong:" << edPrivRaw.size();
         return 0;
     }
-    qDebug() << "[TRACE]   → ED25519 private key raw size =" << edPrivRaw.size();
 
     Signer_Ed signerEd;
     try {
@@ -191,10 +210,8 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         return 0;
     }
     std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
-    qDebug() << "[TRACE]   → edSig size =" << edSig.size()
-             << ", edSigB64 length =" << edSigB64.size();
 
-    // ── 9) DILITHIUM sign that same sigInput using *your registered* private key ─
+    // ── 9) Dilithium sign (unchanged apart from msgBytes) -------------------
     qDebug() << "[TRACE] 9) Dilithium sign";
     std::string pqPrivB64;
     std::vector<uint8_t> pqPrivRaw;
@@ -206,15 +223,11 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         qWarning() << "[ERROR] decoding Dilithium private key threw:" << ex.what();
         return 0;
     }
-    // Check length matches length_secret_key
     Signer_Dilithium probeDil;
-    size_t expectedSkLen = probeDil.skLength();
-    if (pqPrivRaw.size() != expectedSkLen) {
-        qWarning() << "[ERROR] Dilithium private‐key length is wrong:"
-                   << pqPrivRaw.size() << "bytes (expected" << expectedSkLen << ")";
+    if (pqPrivRaw.size() != probeDil.skLength()) {
+        qWarning() << "[ERROR] Dilithium private‑key length is wrong:" << pqPrivRaw.size();
         return 0;
     }
-    qDebug() << "[TRACE]   → Dilithium private key raw size =" << pqPrivRaw.size();
 
     Signer_Dilithium signerPQ;
     try {
@@ -234,74 +247,40 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         return 0;
     }
     std::string pqSigB64 = FileClientData::base64_encode(pqSig.data(), pqSig.size());
-    qDebug() << "[TRACE]   → pqSig size =" << pqSig.size()
-             << ", pqSigB64 length =" << pqSigB64.size();
 
-    // ── 10) Build **one** raw JSON string, exactly in this order:
-    nlohmann::json jbody;
+    // ── 10) Build body JSON --------------------------------------------------
+    nlohmann::ordered_json jbody;
     jbody["file_content"]           = fileB64;
     jbody["metadata"]               = metaB64;
     jbody["pre_quantum_signature"]  = edSigB64;
     jbody["post_quantum_signature"] = pqSigB64;
 
-    // Dump the JSON text ONE TIME and store it verbatim:
-    std::string bodyString = jbody.dump(/* you may pass no arguments to ensure no extra whitespace */);
-    qDebug() << "[CLIENT] bodyString (len=" << bodyString.size() << "):"
-             << QString::fromStdString(bodyString);
+    std::string bodyString = jbody.dump();
 
-    // ── 11) Build canonical = username|timestamp|POST|/api/fs/upload|bodyString
-    //      Make sure we use exactly the same path that the server sees:
-    const QString qsNow = QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + "Z";
+    // ── 11) Canonical request string & auth headers (unchanged) -------------
+    const QString qsNow = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     std::string timestamp = qsNow.toStdString();
     std::ostringstream canon;
-    canon << m_username      // “alice”, for example
-          << "|" << timestamp // e.g. “2025-06-02T18:47:12Z”
-          << "|" << "POST"
-          << "|" << "/api/fs/upload"
-          << "|" << bodyString;
+    canon << m_username << "|" << timestamp << "|POST|/api/fs/upload|" << bodyString;
     const std::string canonicalString = canon.str();
-    qDebug() << "[CLIENT] canonicalString (len=" << canonicalString.size() << "):"
-             << QString::fromStdString(canonicalString);
 
-    // ── 12) Sign “canonicalString” with Ed25519 and Dilithium (post‐quantum)
-    //      exactly as Bun’s helper does. For example:
-    std::vector<uint8_t> preAuthSig;   // raw bytes of Ed25519(canonicalString)
-    std::vector<uint8_t> postAuthSig;  // raw bytes of Dilithium(canonicalString)
-
+    std::vector<uint8_t> preAuthSig; // Ed25519(canonicalString)
+    std::vector<uint8_t> postAuthSig; // Dilithium(canonicalString)
     {
-        // (a) Ed25519:
-        Signer_Ed signerEd;
-        signerEd.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
-        preAuthSig = signerEd.sign(
-            std::vector<uint8_t>(canonicalString.begin(),
-                                 canonicalString.end())
-            );
+        Signer_Ed signerEdAuth;
+        signerEdAuth.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
+        preAuthSig = signerEdAuth.sign({ canonicalString.begin(), canonicalString.end() });
+    }
+    {
+        Signer_Dilithium signerPQAuth;
+        signerPQAuth.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
+        postAuthSig = signerPQAuth.sign({ canonicalString.begin(), canonicalString.end() });
     }
 
-    {
-        // (b) Dilithium:
-        Signer_Dilithium signerPQ;
-        signerPQ.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
-        postAuthSig = signerPQ.sign(
-            std::vector<uint8_t>(canonicalString.begin(),
-                                 canonicalString.end())
-            );
-    }
-
-    // Base64‐encode each:
     std::string preAuthSigB64  = FileClientData::base64_encode(preAuthSig.data(),  preAuthSig.size());
     std::string postAuthSigB64 = FileClientData::base64_encode(postAuthSig.data(), postAuthSig.size());
     std::string combinedAuthSig = preAuthSigB64 + "||" + postAuthSigB64;
-    qDebug() << "[CLIENT] combinedAuthSig length =" << combinedAuthSig.size();
 
-    // ── 13) Build headers exactly as Bun expects:
-    //
-    //     "Content-Type":    "application/json"
-    //     "Host":            "localhost:3000"
-    //     "X-Username":      m_username
-    //     "X-Timestamp":     timestamp
-    //     "X-Signature":     combinedAuthSig
-    //
     std::map<std::string, std::string> headers = {
         { "Host",           "localhost:3000" },
         { "Content-Type",   "application/json" },
@@ -310,14 +289,8 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         { "X-Signature",    combinedAuthSig   }
     };
 
-    // ── 14) Send the HTTP POST to “/api/fs/upload”
-    HttpRequest req(
-        HttpRequest::Method::POST,
-        "/api/fs/upload",
-        bodyString,
-        headers
-        );
-
+    // ── 12) Send the HTTP POST ----------------------------------------------
+    HttpRequest req(HttpRequest::Method::POST, "/api/fs/upload", bodyString, headers);
     AsioHttpClient httpClient;
     httpClient.init(""); // no TLS
     HttpResponse resp = httpClient.sendRequest("localhost", 3000, req);
@@ -325,29 +298,22 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     qDebug() << "[CLIENT]   → HTTP status code =" << resp.statusCode;
     qDebug() << "[CLIENT]   → HTTP body =" << QString::fromStdString(resp.body);
 
-
     if (resp.statusCode == 201) {
-        qDebug() << "[TRACE] 15) server returned 201, parsing file_id";
         uint64_t newFileId = 0;
         try {
             auto respJson = json::parse(resp.body);
             newFileId = respJson.at("file_id").get<uint64_t>();
-        }
-        catch (const std::exception& ex) {
+        } catch (const std::exception& ex) {
             qWarning() << "[ERROR] parsing response JSON threw:" << ex.what();
             return 0;
         }
 
-        // ── 16) Persist FileClientData locally ────────────────────────────────
         fcd.file_id = newFileId;
-        qDebug() << "[TRACE] 16) upsertFileData (file_id =" << newFileId << ")";
         m_store->upsertFileData(fcd);
-
-        qDebug() << "[TRACE] processSingleFile() finished → returning" << newFileId;
         return newFileId;
     }
 
-    qWarning() << "[ERROR] server returned non‐201 status:" << resp.statusCode;
+    qWarning() << "[ERROR] server returned non‑201 status:" << resp.statusCode;
     return 0;
 }
 
@@ -372,7 +338,18 @@ std::string FileUploadHandler::buildSignatureInput(const std::string& uname,
                                                    const std::string& fileB64,
                                                    const std::string& metaB64)
 {
+    // NEW: match server‑side helper -> hash(ciphertext) & hash(ciphertext‑metadata)
+
+    // 1) Decode base64 back to ciphertext bytes
+    std::vector<uint8_t> fileCipher  = FileClientData::base64_decode(fileB64);
+    std::vector<uint8_t> metaCipher  = FileClientData::base64_decode(metaB64);
+
+    // 2) SHA‑256 each blob
+    std::string fileHashHex = toHex(Hash::sha256(fileCipher));
+    std::string metaHashHex = toHex(Hash::sha256(metaCipher));
+
+    // 3) Concatenate with pipes
     std::ostringstream oss;
-    oss << uname << "|" << fileB64 << "|" << metaB64;
+    oss << uname << "|" << fileHashHex << "|" << metaHashHex;
     return oss.str();
 }
