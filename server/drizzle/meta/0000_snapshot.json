@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "df2ee26c-2dbb-444a-8cb5-550610fa20f2",
+  "id": "78f35fb1-4fac-4b7c-9174-5e63d1e27334",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "files_table": {
@@ -161,20 +161,6 @@
         },
         "encrypted_mek_nonce": {
           "name": "encrypted_mek_nonce",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "pre_quantum_signature": {
-          "name": "pre_quantum_signature",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "post_quantum_signature": {
-          "name": "post_quantum_signature",
           "type": "blob",
           "primaryKey": false,
           "notNull": true,
