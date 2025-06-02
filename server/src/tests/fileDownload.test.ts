@@ -35,7 +35,7 @@ describe("File Download API", () => {
 
     const user = harness.getUser("testuser");
     const signaturesValid = harness.verifyFileSignatures(
-      user.dbUser.user_id,
+      user.dbUser.username,
       responseData.file_content,
       uploadResult.test_data.encrypted_metadata,
       responseData.pre_quantum_signature,
@@ -81,7 +81,7 @@ describe("File Download API", () => {
 
     const user = harness.getUser("testuser");
     const signaturesValid = harness.verifyFileSignatures(
-      user.dbUser.user_id,
+      user.dbUser.username,
       responseData.file_content,
       uploadResult.test_data.encrypted_metadata,
       responseData.pre_quantum_signature,
@@ -128,7 +128,7 @@ describe("File Download API", () => {
 
     const user = harness.getUser("testuser");
     const signaturesValid = harness.verifyFileSignatures(
-      user.dbUser.user_id,
+      user.dbUser.username,
       responseData.file_content,
       uploadResult.test_data.encrypted_metadata,
       responseData.pre_quantum_signature,
@@ -221,7 +221,7 @@ describe("File Download API", () => {
 
     const user = harness.getUser("testuser");
     const signatures1Valid = harness.verifyFileSignatures(
-      user.dbUser.user_id,
+      user.dbUser.username,
       data1.file_content,
       uploadResult1.test_data.encrypted_metadata,
       data1.pre_quantum_signature,
@@ -229,7 +229,7 @@ describe("File Download API", () => {
       user.keyBundle.public
     );
     const signatures2Valid = harness.verifyFileSignatures(
-      user.dbUser.user_id,
+      user.dbUser.username,
       data2.file_content,
       uploadResult2.test_data.encrypted_metadata,
       data2.pre_quantum_signature,

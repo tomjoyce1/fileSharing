@@ -209,7 +209,7 @@ export function decryptMetadata(
 }
 
 export function createFileSignature(
-  owner_user_id: number,
+  owner_username: string,
   file_content: string,
   metadata: string
 ): string {
@@ -220,5 +220,5 @@ export function createFileSignature(
     .update(Buffer.from(metadata, "base64"))
     .digest("hex");
 
-  return `${owner_user_id}|${encryptedContentHash}|${encryptedMetadataHash}`;
+  return `${owner_username}|${encryptedContentHash}|${encryptedMetadataHash}`;
 }
