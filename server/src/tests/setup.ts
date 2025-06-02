@@ -110,7 +110,7 @@ class TestFileHelper {
     readonly post_quantum_signature: string;
   } {
     const dataToSign = createFileSignature(
-      user.dbUser.user_id,
+      user.dbUser.username,
       encrypted_file_content,
       encrypted_metadata
     );
@@ -237,7 +237,7 @@ class TestFileHelper {
   }
 
   verifyFileSignatures(
-    user_id: number,
+    username: string,
     file_content: string,
     metadata: string,
     pre_quantum_signature: string,
@@ -245,7 +245,7 @@ class TestFileHelper {
     userPublicBundle: KeyBundlePublic
   ): boolean {
     try {
-      const dataToSign = createFileSignature(user_id, file_content, metadata);
+      const dataToSign = createFileSignature(username, file_content, metadata);
 
       const preQuantumValid = verify(
         null,
@@ -676,7 +676,7 @@ export class TestHarness {
 
   // Verification helpers
   verifyFileSignatures(
-    user_id: number,
+    username: string,
     file_content: string,
     metadata: string,
     pre_quantum_signature: string,
@@ -684,7 +684,7 @@ export class TestHarness {
     userPublicBundle: KeyBundlePublic
   ): boolean {
     return this._fileHelper.verifyFileSignatures(
-      user_id,
+      username,
       file_content,
       metadata,
       pre_quantum_signature,
