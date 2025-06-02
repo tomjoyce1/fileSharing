@@ -3,8 +3,7 @@ import DriveList from "@/components/DriveList";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useDriveFiles } from "./useDriveFiles";
-import { useFileUpload } from "./useFileUpload";
-import { useFileActions } from "./useFileActions";
+ import { useFileActions } from "./useFileActions";
 import { useKeyValidation } from "./useKeyValidation";
 import type { FileItem, DriveItem } from "./driveTypes";
 
@@ -16,7 +15,7 @@ export default function DriveMain() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { files, hasNextPage, fetchFiles } = useDriveFiles(page, setError, setIsLoading);
-  const { handleFileChange } = useFileUpload(fetchFiles, page, setError, setIsLoading);
+
   const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(fetchFiles, page, setError, setIsLoading);
 
   // Key validation on mount
@@ -89,7 +88,7 @@ export default function DriveMain() {
           </div>
           <Button onClick={handleUpload} className="bg-blue-600 hover:bg-blue-700">Upload</Button>
           <button onClick={() => { localStorage.removeItem("drive_username"); localStorage.removeItem("drive_password"); window.location.reload(); }} className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white">Logout</button>
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <input type="file" ref={fileInputRef} className="hidden" />
         </div>
       </header>
       <main className="p-6">

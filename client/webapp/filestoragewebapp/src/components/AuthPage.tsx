@@ -82,34 +82,7 @@ async function saveKeyToIndexedDB(
       }
     };
 
-    // Handle VersionError by deleting and recreating the database
-    request.onerror = (event) => {
-      const target = event.target as IDBRequest | null;
-      const error = target?.error;
-      if (error?.name === "VersionError") {
-        console.error("[DB] VersionError occurred. Deleting and recreating the database.");
-        indexedDB.deleteDatabase("DriveKeysDB").onsuccess = () => {
-          console.log("[DB] Database deleted successfully. Recreating...");
-          const recreateRequest = indexedDB.open("DriveKeysDB", 2);
-          recreateRequest.onupgradeneeded = (event) => {
-            const newDb = recreateRequest.result;
-            console.log(`[DB] Recreating 'keys' object store during onupgradeneeded. Old version: ${event.oldVersion}, New version: ${event.newVersion}`);
-            newDb.createObjectStore("keys");
-          };
-          recreateRequest.onsuccess = () => {
-            console.log("[DB] Database recreated successfully.");
-            resolve();
-          };
-          recreateRequest.onerror = () => {
-            console.error("[DB] Failed to recreate the database.", recreateRequest.error);
-            reject(recreateRequest.error);
-          };
-        };
-      } else {
-        console.error("[DB] Request error:", error);
-        reject(error);
-      }
-    };
+    request.onerror = () => reject(request.error);
   });
 }
 
@@ -376,18 +349,18 @@ console.log("mldsaTest length:", mldsaTest?.length);
           const x25519Raw = await getKeyFromIndexedDB(
             `${username}_x25519_priv`,
           );
-          try {
-            const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
-            console.log("[Login] Retrieved from IndexedDB:", {
-              ed: edRaw,
-              x25519: x25519Raw,
-              mldsa: mldsaRaw,
-            });
-          } catch (error) {
-            console.error("[Login] Error retrieving keys:", error);
-          }
+          const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
+          console.log("[Login] Retrieved from IndexedDB:", {
+            ed: edRaw,
+            x25519: x25519Raw,
+            mldsa: mldsaRaw
+          });
+          console.log("[Login] Retrieved mldsaRaw:", mldsaRaw);
+          console.log("[Login] Type:", typeof mldsaRaw);
+          console.log("[Login] Is Uint8Array:", mldsaRaw instanceof Uint8Array);
+          console.log("[Login] Length:", mldsaRaw?.length);
 
-          if (!edRaw || !x25519Raw) {
+          if (!edRaw || !x25519Raw || !mldsaRaw) {
             setError("No keys found for this user. Please register first.");
             setLoading(false);
             return;
