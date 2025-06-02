@@ -270,28 +270,11 @@ export async function POST(
   );
 
   if (signatureResult.isErr()) {
-<<<<<<< HEAD
-    console.log(
-      "[UPLOAD] Signature verification failed:",
-      signatureResult.error,
-      {
-        user_id: user.user_id,
-        file_content,
-        metadata,
-        pre_quantum_signature,
-        post_quantum_signature,
-        userPublicBundle,
-        dataToSign,
-      }
-    );
-    return Response.json({ message: "Unauthorized b" }, { status: 401 });
-=======
     const apiError = signatureResult.error;
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
->>>>>>> origin/main
   }
 
   // Generate unique storage path and write file to disk
@@ -318,20 +301,12 @@ export async function POST(
   if (insertResult.isErr()) {
     // Database failed, try cleanup the file we just wrote
     cleanupFile(storage_path);
-<<<<<<< HEAD
-    console.error(
-      "[UPLOAD] Database error after file write. File cleaned up:",
-      storage_path
-    );
-    return Response.json({ message: "Database error" }, { status: 500 });
-=======
 
     const apiError = insertResult.error;
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
->>>>>>> origin/main
   }
 
   console.log(

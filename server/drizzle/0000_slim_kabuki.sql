@@ -22,10 +22,7 @@ CREATE TABLE `shared_access_table` (
 	`encrypted_fek_nonce` blob NOT NULL,
 	`encrypted_mek` blob NOT NULL,
 	`encrypted_mek_nonce` blob NOT NULL,
-<<<<<<<< HEAD:server/drizzle/0000_huge_may_parker.sql
-========
-	`ephemeral_public_key` blob NOT NULL,
->>>>>>>> origin/main:server/drizzle/0000_slim_kabuki.sql
+
 	`shared_at` integer DEFAULT (strftime('%s', 'now')) NOT NULL,
 	FOREIGN KEY (`owner_user_id`) REFERENCES `users_table`(`user_id`) ON UPDATE cascade ON DELETE cascade,
 	FOREIGN KEY (`shared_with_user_id`) REFERENCES `users_table`(`user_id`) ON UPDATE cascade ON DELETE cascade,
