@@ -62,6 +62,9 @@ export async function fetchFiles(
     setFiles(fileData);
     setHasNextPage(hasNextPage);
     setError(null);
+
+    console.log("[Debug]frontend final big one Canonical String:", canonicalString);
+
   } catch (err) {
     setError(err instanceof Error ? err.message : "Failed to fetch files");
     setFiles([]);

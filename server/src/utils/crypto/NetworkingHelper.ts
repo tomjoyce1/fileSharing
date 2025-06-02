@@ -6,6 +6,7 @@ import { db } from "~/db";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { deserializeKeyBundlePublic } from "./KeyHelper";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 
 export const DEFAULT_BASE_URL = "http://localhost:3000";
 const REPLAY_ATTACK_WINDOW_MS = 60 * 1000;
@@ -27,6 +28,20 @@ export function createSignatures(
   canonicalString: string,
   privateBundle: KeyBundlePrivate
 ): { preQuantum: string; postQuantum: string } {
+  // Debugging: Log the structure of privateBundle
+  console.log("[Debug] Private Key Bundle:", {
+    preQuantum: privateBundle?.preQuantum?.identitySigning,
+    postQuantum: privateBundle?.postQuantum?.identitySigning,
+  });
+
+  if (!privateBundle?.preQuantum?.identitySigning?.privateKey) {
+    throw new Error("Pre-Quantum identitySigning private key is undefined");
+  }
+
+  if (!privateBundle?.postQuantum?.identitySigning?.privateKey) {
+    throw new Error("Post-Quantum identitySigning private key is undefined");
+  }
+
   const preQuantumSignature = nodeSign(
     null,
     Buffer.from(canonicalString),
@@ -181,6 +196,23 @@ export async function createSignedGET(
   return fetch(signedRequest);
 }
 
+function logSigDebug(label: string, data: any) {
+  try {
+    const logFilePath = "sig-debug.log";
+    if (!existsSync(logFilePath)) {
+      writeFileSync(logFilePath, "", { flag: "w" });
+    }
+    appendFileSync(
+      logFilePath,
+      `[${new Date().toISOString()}] ${label}: ${
+        typeof data === "string" ? data : JSON.stringify(data, null, 2)
+      }\n`
+    );
+  } catch (e) {
+    console.error("[sig-debug.log] Failed to write log", e);
+  }
+}
+
 async function verifyRequestSignature(
   request: Request,
   publicBundle: KeyBundlePublic,
@@ -190,18 +222,15 @@ async function verifyRequestSignature(
   const timestamp = request.headers.get("X-Timestamp");
   const signature = request.headers.get("X-Signature");
 
-  console.log(
-    "[Debug] Received Headers:",
-    JSON.stringify({ username, timestamp, signature }).substring(0, 200)
-  );
+  logSigDebug("AUTH REQUEST HEADERS", { username, timestamp, signature });
 
   if (!username || !timestamp || !signature) {
-    console.error("[Error] Missing required headers");
+    logSigDebug("AUTH ERROR", "Missing required headers");
     return null;
   }
 
   if (!isWithinReplayWindow(timestamp)) {
-    console.error("[Error] Timestamp outside replay window:", {
+    logSigDebug("AUTH ERROR", {
       serverTime: new Date().toISOString(),
       clientTimestamp: timestamp,
     });
@@ -210,19 +239,14 @@ async function verifyRequestSignature(
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
-    console.error("[Error] Invalid signature format");
+    logSigDebug("AUTH ERROR", "Invalid signature format");
     return null;
   }
-
-  console.log(
-    "[Debug] Parsed Signatures:",
-    JSON.stringify(signatures).substring(0, 200)
-  );
 
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
 
-  console.log("[Debug] Request Body:", requestBody.substring(0, 200));
+  logSigDebug("AUTH REQUEST BODY", requestBody);
 
   const requestUrl = new URL(request.url);
   const requestPath = requestUrl.pathname;
@@ -235,39 +259,31 @@ async function verifyRequestSignature(
     requestBody
   );
 
-  console.log(
-    "[Debug] Backend Canonical String:",
-    canonicalString.substring(0, 200)
-  );
+  logSigDebug("AUTH BACKEND CANONICAL STRING", canonicalString);
+  logSigDebug("AUTH SIGNATURES", signatures);
 
-  // Log details of the file_content for debugging
   try {
-    const parsedBody = JSON.parse(requestBody);
-    if (parsedBody.file_content) {
-      console.log(
-        "[Debug] Decoded file_content:",
-        parsedBody.file_content.substring(0, 200)
-      );
-    }
-  } catch (error) {
-    console.error(
-      "[Error] Failed to parse request body for file_content:",
-      error
+    const isValid = await verifySignatures(
+      canonicalString,
+      signatures,
+      publicBundle
     );
-  }
-
-  const isValid = await verifySignatures(
-    canonicalString,
-    signatures,
-    publicBundle
-  );
-
-  if (!isValid) {
-    console.error("[Error] Signature verification failed");
+    logSigDebug("AUTH SIGNATURE VERIFICATION RESULT", isValid);
+    if (!isValid) {
+      logSigDebug("AUTH SIGNATURE VERIFICATION FAILURE", {
+        canonicalString,
+        signatures,
+      });
+      return null;
+    }
+    return username;
+  } catch (e) {
+    logSigDebug(
+      "AUTH SIGNATURE VERIFICATION EXCEPTION",
+      e instanceof Error ? e.stack || e.message : e
+    );
     return null;
   }
-
-  return username;
 }
 
 export async function getAuthenticatedUserFromRequest(

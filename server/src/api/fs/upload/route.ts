@@ -8,7 +8,13 @@ import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper
 import { deserializeKeyBundlePublic } from "~/utils/crypto/KeyHelper";
 import { createFileSignature } from "~/utils/crypto/FileEncryption";
 import { ok, err, Result } from "neverthrow";
-import { existsSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  unlinkSync,
+  appendFileSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import type { KeyBundlePublic, APIError } from "~/utils/schema";
 
@@ -85,6 +91,26 @@ function cleanupFile(storage_path: string): void {
   }
 }
 
+function logSigDebug(label: string, data: any) {
+  try {
+    const logFilePath = "sig-debug.log";
+
+    // Ensure the file exists or create it
+    if (!existsSync(logFilePath)) {
+      writeFileSync(logFilePath, "", { flag: "w" });
+    }
+
+    appendFileSync(
+      logFilePath,
+      `[${new Date().toISOString()}] ${label}: ${
+        typeof data === "string" ? data : JSON.stringify(data, null, 2)
+      }\n`
+    );
+  } catch (e) {
+    console.error("[sig-debug.log] Failed to write log", e);
+  }
+}
+
 function verifyFileSignatures(
   username: string,
   file_content: string,
@@ -95,44 +121,51 @@ function verifyFileSignatures(
 ): Result<void, APIError> {
   try {
     const dataToSign = createFileSignature(username, file_content, metadata);
-
-    console.log("[Debug] Canonical String (dataToSign):", dataToSign);
-    console.log(
-      "[Debug] Pre-Quantum Public Key:",
-      userPublicBundle.preQuantum.identitySigningPublicKey.toString("base64")
+    logSigDebug("Canonical String (dataToSign)", dataToSign);
+    logSigDebug(
+      "Pre-Quantum Public Key (DER base64)",
+      userPublicBundle.preQuantum.identitySigningPublicKey
+        .export({ format: "der", type: "spki" })
+        .toString("base64")
     );
-    console.log("[Debug] Pre-Quantum Signature:", pre_quantum_signature);
-
+    logSigDebug("Pre-Quantum Signature (base64)", pre_quantum_signature);
+    logSigDebug(
+      "Post-Quantum Public Key (base64)",
+      Buffer.from(
+        userPublicBundle.postQuantum.identitySigningPublicKey
+      ).toString("base64")
+    );
+    logSigDebug("Post-Quantum Signature (base64)", post_quantum_signature);
     const preQuantumValid = verify(
       null,
       Buffer.from(dataToSign),
       userPublicBundle.preQuantum.identitySigningPublicKey,
       Buffer.from(pre_quantum_signature, "base64")
     );
-
-    console.log("[Debug] Pre-Quantum Verification Result:", preQuantumValid);
-
-    console.log(
-      "[Debug] Post-Quantum Public Key:",
-      userPublicBundle.postQuantum.identitySigningPublicKey.toString("base64")
-    );
-    console.log("[Debug] Post-Quantum Signature:", post_quantum_signature);
-
+    logSigDebug("Pre-Quantum Verification Result", preQuantumValid);
     const postQuantumValid = ml_dsa87.verify(
       userPublicBundle.postQuantum.identitySigningPublicKey,
       Buffer.from(dataToSign),
       Buffer.from(post_quantum_signature, "base64")
     );
-
-    console.log("[Debug] Post-Quantum Verification Result:", postQuantumValid);
-
+    logSigDebug("Post-Quantum Verification Result", postQuantumValid);
     if (!preQuantumValid || !postQuantumValid) {
+      logSigDebug("Signature verification failed", {
+        preQuantumValid,
+        postQuantumValid,
+      });
       return err({ message: "Unauthorized", status: 401 });
     }
-
+    logSigDebug("Signature verification succeeded", {
+      preQuantumValid,
+      postQuantumValid,
+    });
     return ok(undefined);
   } catch (error) {
-    console.error("[Error] Signature Verification Exception:", error);
+    logSigDebug(
+      "Signature Verification Exception",
+      error instanceof Error ? error.stack || error.message : error
+    );
     return err({ message: "Internal Server Error", status: 500 });
   }
 }
@@ -181,7 +214,17 @@ function logErrorDetails(context: string, error: unknown) {
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
+  // Log every upload attempt
+  logSigDebug(
+    "UPLOAD ATTEMPT HEADERS",
+    Object.fromEntries(
+      req.headers.entries ? req.headers.entries() : Object.entries(req.headers)
+    )
+  );
+  logSigDebug("UPLOAD ATTEMPT BODY", req.body ? req.body : req.validated?.body);
+
   if (!req.validated?.body) {
+    logSigDebug("UPLOAD ERROR", "No validated body");
     return Response.json({ message: "Internal Server Error" }, { status: 500 });
   }
 
@@ -198,6 +241,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
+    logSigDebug("AUTHENTICATION FAILURE", userResult.error);
     return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
@@ -205,6 +249,7 @@ export async function POST(
 
   // ensure file size is within limit
   if (file_content.length > MAX_FILE_SIZE) {
+    logSigDebug("UPLOAD ERROR", "File too large");
     return Response.json({ message: "File too large" }, { status: 413 });
   }
 
@@ -224,6 +269,7 @@ export async function POST(
 
   if (signatureResult.isErr()) {
     const apiError = signatureResult.error;
+    logSigDebug("SIGNATURE VERIFICATION FAILURE", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
@@ -236,6 +282,7 @@ export async function POST(
 
   if (writeResult.isErr()) {
     const apiError = writeResult.error;
+    logSigDebug("UPLOAD ERROR", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
@@ -256,12 +303,14 @@ export async function POST(
     cleanupFile(storage_path);
 
     const apiError = insertResult.error;
+    logSigDebug("UPLOAD ERROR", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
   }
 
+  logSigDebug("UPLOAD SUCCESS", { file_id: insertResult.value });
   return Response.json(
     {
       message: "File uploaded successfully",

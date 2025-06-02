@@ -18,12 +18,12 @@ export default function DriveMain() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const { files, hasNextPage, fetchFiles } = useDriveFiles(page, setError, setIsLoading);
+  const { files, hasNextPage } = useDriveFiles(page, setError, setIsLoading);
 
-  const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(fetchFiles, page, setError, setIsLoading);
+  const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(files, page, setError, setIsLoading);
 
   // Key validation on mount
-  useKeyValidation(page, setError, fetchFiles);
+  useKeyValidation(page, setError, files);
 
   // Processed files for display
   const [processedFiles, setProcessedFiles] = useState<FileItem[]>([]);
@@ -103,20 +103,17 @@ export default function DriveMain() {
           identitySigning: { privateKey: mldsaPriv },
         },
       };
-      // Get userId (not available in localStorage, so use 1 as placeholder or fetch from server if needed)
-      const userId = 1;
       // Upload
       const result = await uploadFile(
         fileContent,
         metadata,
-        userId,
         username,
         privateKeyBundle,
         ""
       );
       if (!result.success) throw new Error(result.error || "Upload failed");
       // Refresh file list
-      await fetchFiles(page);
+      setPage(p => p + 1);
     } catch (err) {
       setUploadError((err as Error).message);
     } finally {

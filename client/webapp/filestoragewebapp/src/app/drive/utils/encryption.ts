@@ -15,6 +15,25 @@ function base64ToUint8(str: string): Uint8Array {
   return Uint8Array.from(atob(str), c => c.charCodeAt(0));
 }
 
+// Helper: SHA-256 to hex using SubtleCrypto
+async function sha256Hex(base64str: string): Promise<string> {
+  const bytes = Uint8Array.from(atob(base64str), c => c.charCodeAt(0));
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Canonical string for file signature (matches backend)
+async function createFileSignatureCanonical(username: string, file_content: string, metadata: string): Promise<string> {
+  const fileContentHash = await sha256Hex(file_content);
+  const metadataHash = await sha256Hex(metadata);
+  const canonical = `${username}|${fileContentHash}|${metadataHash}`;
+  console.log('[FileSign] Canonical String:', canonical);
+  
+  console.log('[FileSign] file_content SHA256:', fileContentHash);
+  console.log('[FileSign] metadata SHA256:', metadataHash);
+  return canonical;
+}
+
 export function encryptFile(
   fileContent: Uint8Array,
   metadata: Record<string, unknown>
@@ -64,48 +83,27 @@ export function decryptFile(
   return { decryptedContent, metadata };
 }
 
-function createFileSignature(
-  userId: number,
-  encryptedFileContent: string,
-  encryptedMetadata: string
-): Uint8Array {
-  // Create user ID buffer (4 bytes, big-endian)
-  const userIdBuffer = new Uint8Array(4);
-  new DataView(userIdBuffer.buffer).setUint32(0, userId, false);
-  // Convert base64 strings to Uint8Arrays
-  const fileBuffer = Uint8Array.from(atob(encryptedFileContent), c => c.charCodeAt(0));
-  const metadataBuffer = Uint8Array.from(atob(encryptedMetadata), c => c.charCodeAt(0));
-  // Concatenate: user_id + file_content + metadata
-  const combined = new Uint8Array(userIdBuffer.length + fileBuffer.length + metadataBuffer.length);
-  combined.set(userIdBuffer);
-  combined.set(fileBuffer, userIdBuffer.length);
-  combined.set(metadataBuffer, userIdBuffer.length + fileBuffer.length);
-  return combined;
-}
-
-function generateFileSignatures(
-  userId: number,
+// Updated: Generate file signatures using canonical string
+export async function generateFileSignatures(
+  username: string,
   encryptedFileContent: string,
   encryptedMetadata: string,
   privateKeyBundle: any
 ) {
-  // Create the data to sign
-  const dataToSign = createFileSignature(
-    userId,
-    encryptedFileContent,
-    encryptedMetadata
-  );
+  const canonicalString = await createFileSignatureCanonical(username, encryptedFileContent, encryptedMetadata);
+  const canonicalBytes = new TextEncoder().encode(canonicalString);
   // Generate pre-quantum signature using ed25519
-  const preQuantumSig = sodium.crypto_sign_detached(dataToSign, privateKeyBundle.preQuantum.identitySigning.privateKey);
+  const preQuantumSig = sodium.crypto_sign_detached(canonicalBytes, privateKeyBundle.preQuantum.identitySigning.privateKey);
   // Generate post-quantum signature (ML-DSA-87)
   const postQuantumSig = ml_dsa87.sign(
     privateKeyBundle.postQuantum.identitySigning.privateKey,
-    dataToSign
+    canonicalBytes
   );
   // Convert signatures to base64
   return {
     pre_quantum_signature: btoa(String.fromCharCode(...preQuantumSig)),
     post_quantum_signature: btoa(String.fromCharCode(...postQuantumSig)),
+    canonicalString // for logging/testing
   };
 }
 
@@ -160,7 +158,6 @@ export function createAuthenticatedRequest(
 export async function uploadFile(
   fileContent: Uint8Array,
   metadata: Record<string, unknown>,
-  userId: number,
   username: string,
   privateKeyBundle: any,
   serverUrl: string
@@ -176,9 +173,9 @@ export async function uploadFile(
     // Step 2: Convert encrypted data to base64 for transmission
     const encryptedFileBase64 = uint8ToBase64(encryptionResult.encryptedContent);
     const encryptedMetadataBase64 = uint8ToBase64(encryptionResult.encryptedMetadata);
-    // Step 3: Generate file signatures
-    const fileSignatures = generateFileSignatures(
-      userId,
+    // Step 3: Generate file signatures (await)
+    const fileSignatures = await generateFileSignatures(
+      username,
       encryptedFileBase64,
       encryptedMetadataBase64,
       privateKeyBundle
@@ -190,26 +187,33 @@ export async function uploadFile(
       pre_quantum_signature: fileSignatures.pre_quantum_signature,
       post_quantum_signature: fileSignatures.post_quantum_signature,
     };
-    // Step 5: Create authenticated request
+    const bodyString = JSON.stringify(requestBody);
+    // Step 5: Create authenticated request (for headers, use timestamp etc. as before)
     const uploadUrl = `${serverUrl}/api/fs/upload`;
-    const { headers, body } = createAuthenticatedRequest(
-      'POST',
-      uploadUrl,
-      requestBody,
-      username,
-      privateKeyBundle
-    );
-
+    const timestamp = new Date().toISOString();
+    const canonicalString = `${username}|${timestamp}|POST|/api/fs/upload|${bodyString}`;
+    const canonicalBytes = new TextEncoder().encode(canonicalString);
+    const preQuantumSig = sodium.crypto_sign_detached(canonicalBytes, privateKeyBundle.preQuantum.identitySigning.privateKey);
+    const postQuantumSig = ml_dsa87.sign(privateKeyBundle.postQuantum.identitySigning.privateKey, canonicalBytes);
+    const preQuantumSigB64 = btoa(String.fromCharCode(...preQuantumSig));
+    const postQuantumSigB64 = btoa(String.fromCharCode(...postQuantumSig));
+    // Create headers
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Username': username,
+      'X-Timestamp': timestamp,
+      'X-Signature-PreQuantum': preQuantumSigB64,
+      'X-Signature-PostQuantum': postQuantumSigB64,
+      'X-Signature': `${preQuantumSigB64}||${postQuantumSigB64}`,
+    };
     // logging
-    console.log("UPLOAD HEADERS", JSON.stringify(headers).substring(0, 200));
-console.log("UPLOAD BODY", JSON.stringify(requestBody).substring(0, 200));
-
-
+    console.log('UPLOAD HEADERS', JSON.stringify(headers).substring(0, 200));
+    console.log('UPLOAD BODY', bodyString.substring(0, 200));
     // Step 6: Send HTTP request
     const response = await fetch(uploadUrl, {
       method: 'POST',
       headers,
-      body,
+      body: bodyString,
     });
     // Step 7: Handle response
     if (!response.ok) {
