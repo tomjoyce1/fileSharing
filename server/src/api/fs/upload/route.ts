@@ -96,6 +96,13 @@ function verifyFileSignatures(
   try {
     const dataToSign = createFileSignature(user_id, file_content, metadata);
 
+    console.log("[Debug] Canonical String (dataToSign):", dataToSign);
+    console.log(
+      "[Debug] Pre-Quantum Public Key:",
+      userPublicBundle.preQuantum.identitySigningPublicKey.toString("base64")
+    );
+    console.log("[Debug] Pre-Quantum Signature:", pre_quantum_signature);
+
     const preQuantumValid = verify(
       null,
       Buffer.from(dataToSign),
@@ -103,11 +110,21 @@ function verifyFileSignatures(
       Buffer.from(pre_quantum_signature, "base64")
     );
 
+    console.log("[Debug] Pre-Quantum Verification Result:", preQuantumValid);
+
+    console.log(
+      "[Debug] Post-Quantum Public Key:",
+      userPublicBundle.postQuantum.identitySigningPublicKey.toString("base64")
+    );
+    console.log("[Debug] Post-Quantum Signature:", post_quantum_signature);
+
     const postQuantumValid = ml_dsa87.verify(
       userPublicBundle.postQuantum.identitySigningPublicKey,
       Buffer.from(dataToSign),
       Buffer.from(post_quantum_signature, "base64")
     );
+
+    console.log("[Debug] Post-Quantum Verification Result:", postQuantumValid);
 
     if (!preQuantumValid || !postQuantumValid) {
       return err({ message: "Unauthorized", status: 401 });
@@ -115,6 +132,7 @@ function verifyFileSignatures(
 
     return ok(undefined);
   } catch (error) {
+    console.error("[Error] Signature Verification Exception:", error);
     return err({ message: "Internal Server Error", status: 500 });
   }
 }

@@ -190,11 +190,10 @@ async function verifyRequestSignature(
   const timestamp = request.headers.get("X-Timestamp");
   const signature = request.headers.get("X-Signature");
 
-  console.log("[Debug] Received Headers:", {
-    username,
-    timestamp,
-    signature,
-  });
+  console.log(
+    "[Debug] Received Headers:",
+    JSON.stringify({ username, timestamp, signature }).substring(0, 200)
+  );
 
   if (!username || !timestamp || !signature) {
     console.error("[Error] Missing required headers");
@@ -211,19 +210,20 @@ async function verifyRequestSignature(
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
-    console.error("[Error] Invalid signature format:", signature);
+    console.error("[Error] Invalid signature format");
     return null;
   }
 
-  console.log("[Debug] Parsed Signatures:", signatures);
+  console.log(
+    "[Debug] Parsed Signatures:",
+    JSON.stringify(signatures).substring(0, 200)
+  );
 
-  // use provided body or read from request
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
 
-  console.log("[Debug] Request Body:", requestBody);
+  console.log("[Debug] Request Body:", requestBody.substring(0, 200));
 
-  // extract just the path from the full URL to match signature creation
   const requestUrl = new URL(request.url);
   const requestPath = requestUrl.pathname;
 
@@ -235,26 +235,26 @@ async function verifyRequestSignature(
     requestBody
   );
 
-  // Log the canonical string for debugging
-  console.log("[Debug] aaaaaaaa Backend Canonical String:", canonicalString);
+  console.log(
+    "[Debug] Backend Canonical String:",
+    canonicalString.substring(0, 200)
+  );
 
-  // Log details of the signature verification process
-  console.log("[Debug] Verifying Pre-Quantum Signature:", {
-    canonicalString,
-    signature: signatures.preQuantum,
-    publicKey: publicBundle.preQuantum.identitySigningPublicKey
-      .export({ format: "der", type: "spki" })
-      .toString("base64"),
-  });
-
-  console.log("[Debug] Verifying Post-Quantum Signature:", {
-    canonicalString,
-    signature: signatures.postQuantum,
-    publicKey:
-      publicBundle.postQuantum.identitySigningPublicKey
-        .slice(0, 10)
-        .toString() + "...", // Shortened for brevity
-  });
+  // Log details of the file_content for debugging
+  try {
+    const parsedBody = JSON.parse(requestBody);
+    if (parsedBody.file_content) {
+      console.log(
+        "[Debug] Decoded file_content:",
+        parsedBody.file_content.substring(0, 200)
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[Error] Failed to parse request body for file_content:",
+      error
+    );
+  }
 
   const isValid = await verifySignatures(
     canonicalString,
@@ -262,14 +262,8 @@ async function verifyRequestSignature(
     publicBundle
   );
 
-  console.log("[Debug] Signature Verification Result:", isValid);
-
   if (!isValid) {
-    console.error("[Error] Signature verification failed:", {
-      canonicalString,
-      signatures,
-      publicBundle,
-    });
+    console.error("[Error] Signature verification failed");
     return null;
   }
 

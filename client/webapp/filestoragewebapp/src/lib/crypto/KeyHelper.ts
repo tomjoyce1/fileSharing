@@ -77,13 +77,20 @@ function x25519PublicKeyToSPKIDER(pubkey: Uint8Array): Uint8Array {
 }
 
 export function serializeKeyBundlePublic(bundle: KeyBundlePublic): string {
+  const kemPublicKeySPKIDER = btoa(
+    String.fromCharCode(...x25519PublicKeyToSPKIDER(bundle.preQuantum.identityKemPublicKey))
+  );
+  const signingPublicKeySPKIDER = btoa(
+    String.fromCharCode(...ed25519PublicKeyToSPKIDER(bundle.preQuantum.identitySigningPublicKey))
+  );
+
   return JSON.stringify({
     preQuantum: {
-      identityKemPublicKey: btoa(String.fromCharCode(...x25519PublicKeyToSPKIDER(bundle.preQuantum.identityKemPublicKey))),
-      identitySigningPublicKey: btoa(String.fromCharCode(...ed25519PublicKeyToSPKIDER(bundle.preQuantum.identitySigningPublicKey))),
+      identityKemPublicKey: kemPublicKeySPKIDER,
+      identitySigningPublicKey: signingPublicKeySPKIDER,
     },
     postQuantum: {
-      identityKemPublicKey: btoa(String.fromCharCode(...x25519PublicKeyToSPKIDER(bundle.postQuantum.identityKemPublicKey))),
+      identityKemPublicKey: kemPublicKeySPKIDER, // Reuse preQuantum KEM key for now
       identitySigningPublicKey: btoa(String.fromCharCode(...bundle.postQuantum.identitySigningPublicKey)), // ML-DSA-87: send raw bytes
     },
   });
@@ -110,4 +117,4 @@ export function deserializeKeyBundlePublic(json: string | object): KeyBundlePubl
       identitySigningPublicKey: Uint8Array.from(atob(obj.postQuantum.identitySigningPublicKey), c => c.charCodeAt(0)),
     },
   };
-} 
+}

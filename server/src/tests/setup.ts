@@ -128,6 +128,20 @@ class TestFileHelper {
       )
     ).toString("base64");
 
+    console.log("[Debug] Username:", user.dbUser.username);
+    console.log(
+      "[Debug] Public Key Bundle (raw):",
+      user.dbUser.public_key_bundle.toString()
+    );
+    console.log("[Debug] Canonical String (dataToSign):", dataToSign);
+    console.log(
+      "[Debug] Pre-Quantum Public Key (base64):",
+      user.keyBundle.public.preQuantum.identitySigningPublicKey
+        .export({ format: "der", type: "spki" })
+        .toString("base64")
+    );
+    console.log("[Debug] Pre-Quantum Signature (base64):", preQuantumSignature);
+
     return {
       pre_quantum_signature: useBadSignature ? "invalid" : preQuantumSignature,
       post_quantum_signature: postQuantumSignature,
@@ -349,10 +363,10 @@ class TestSharingHelper extends TestFileHelper {
       encoding: "der",
     });
 
-    const sharedSecret = diffieHellman({
-      privateKey: recipientPrivateKeyBundle.preQuantum.identityKem.privateKey,
-      publicKey: ephemeralPublicKey,
-    });
+    const sharedSecret = this.deriveSharedSecret(
+      ephemeralPublicKey,
+      recipientPrivateKeyBundle.preQuantum.identityKem.privateKey
+    );
 
     const fekNonce = Buffer.from(sharedAccess.encrypted_fek_nonce, "base64");
     const fek = this.decryptWithSharedSecret(

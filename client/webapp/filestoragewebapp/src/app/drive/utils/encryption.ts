@@ -150,9 +150,9 @@ export function createAuthenticatedRequest(
     'X-Signature': `${preQuantumSigB64}||${postQuantumSigB64}`,
   };
   // logging
-  console.log("Canonical String:", canonicalString);
-  console.log("Pre-Quantum Signature:", preQuantumSigB64);
-  console.log("Post-Quantum Signature:", postQuantumSigB64);
+  console.log("Canonical String:", canonicalString.substring(0, 200));
+  console.log("Pre-Quantum Signature:", preQuantumSigB64.substring(0, 200));
+  console.log("Post-Quantum Signature:", postQuantumSigB64.substring(0, 200));
 
   return { headers, body: bodyString };
 }
@@ -201,8 +201,8 @@ export async function uploadFile(
     );
 
     // logging
-    console.log("UPLOAD HEADERS", headers);
-console.log("UPLOAD BODY", requestBody);
+    console.log("UPLOAD HEADERS", JSON.stringify(headers).substring(0, 200));
+console.log("UPLOAD BODY", JSON.stringify(requestBody).substring(0, 200));
 
 
     // Step 6: Send HTTP request

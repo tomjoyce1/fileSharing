@@ -23,7 +23,7 @@ export async function fetchFiles(
       setError("Your login keys are not available yet. Please wait a moment and click Retry.");
       return;
     }
-    const timestamp = Date.now().toString();
+    const timestamp = new Date().toISOString(); // Generate timestamp
     const canonicalString = `${username}|${timestamp}|POST|/api/fs/list|${bodyString}`;
     const canonicalBytes = new TextEncoder().encode(canonicalString);
     // Ed25519 signature
@@ -34,6 +34,7 @@ export async function fetchFiles(
     const postQuantumSig = Buffer.from(
       ml_dsa87.sign(mldsaPrivateKey, canonicalBytes)
     ).toString("base64");
+    // Include timestamp in headers
     const headers = {
       "Content-Type": "application/json",
       "X-Username": username,
@@ -41,6 +42,9 @@ export async function fetchFiles(
       "X-Signature-PreQuantum": preQuantumSig,
       "X-Signature-PostQuantum": postQuantumSig,
     };
+    // Log canonical string and file content for debugging
+    console.log("[Debug] Frontend Canonical String:", canonicalString.substring(0, 200));
+    console.log("[Debug] Frontend Request Body:", bodyString.substring(0, 200));
     const response = await fetch("/api/fs/list", {
       method: "POST",
       headers,
