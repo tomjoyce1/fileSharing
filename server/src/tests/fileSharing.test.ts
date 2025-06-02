@@ -10,7 +10,7 @@ describe("File Sharing API", () => {
 
   test("successful file sharing and verification", async () => {
     await harness.createUser("userA");
-    await harness.createUser("userB");
+    const userB = await harness.createUser("userB");
 
     const uploadResult = await harness.uploadFile(
       "userA",
@@ -23,7 +23,9 @@ describe("File Sharing API", () => {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectSuccessfulResponse(shareResponse, 201);
     await harness.expectResponseMessage(
@@ -53,29 +55,35 @@ describe("File Sharing API", () => {
     const signaturesValid = harness.verifyFileSignatures(
       userA.dbUser.user_id,
       downloadData.file_content,
-      uploadResult.test_data.encrypted_metadata,
+      downloadData.metadata,
       downloadData.pre_quantum_signature,
       downloadData.post_quantum_signature,
       userAPublicKeyBundle
     );
     expect(signaturesValid).toBe(true);
 
+    const derivedClientData = await harness.deriveClientDataFromSharedAccess(
+      downloadData.shared_access,
+      userB.keyBundle.private
+    );
+    expect(derivedClientData).toBeDefined();
+
     const decryptedContent = harness.decryptFileContent(
       downloadData.file_content,
-      uploadResult.test_data.client_data
+      derivedClientData
     );
     expect(decryptedContent).toBe(TestData.simpleFile.content);
 
     const decryptedMetadata = harness.decryptMetadata(
-      uploadResult.test_data.encrypted_metadata,
-      uploadResult.test_data.client_data
+      downloadData.metadata,
+      derivedClientData
     );
     expect(decryptedMetadata.name).toBe(TestData.simpleFile.metadata.name);
   });
 
   test("file tampering detection", async () => {
     await harness.createUser("userA");
-    await harness.createUser("userB");
+    const userB = await harness.createUser("userB");
 
     const originalContent = "original file content";
     const uploadResult = await harness.uploadFile("userA", originalContent);
@@ -85,28 +93,21 @@ describe("File Sharing API", () => {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectSuccessfulResponse(shareResponse, 201);
 
-    const fileRecord = await testDb
-      .select()
-      .from(filesTable)
-      .where(eq(filesTable.file_id, uploadResult.file_id))
-      .then((rows: any[]) => rows[0]);
+    // User B downloads the file
+    const downloadResponse = await harness.downloadFile(
+      "userB",
+      uploadResult.file_id
+    );
+    harness.expectSuccessfulResponse(downloadResponse);
+    const downloadData = (await downloadResponse.json()) as any;
 
-    if (!fileRecord) {
-      throw new Error("File record not found");
-    }
-
-    const fs = require("fs");
-    const originalFileContent = fs.readFileSync(fileRecord.storage_path);
-    const tamperedContent = Buffer.concat([
-      originalFileContent,
-      Buffer.from("123"),
-    ]);
-    writeFileSync(fileRecord.storage_path, tamperedContent);
-
+    // Get User A's public key bundle
     const keyBundleResponse = await harness.getUserKeyBundle("userA", "userB");
     harness.expectSuccessfulResponse(keyBundleResponse);
     const keyBundleData = (await keyBundleResponse.json()) as any;
@@ -114,23 +115,37 @@ describe("File Sharing API", () => {
       keyBundleData.key_bundle
     );
 
-    const tamperedBase64 = tamperedContent.toString("base64");
-
     const userA = harness.getUser("userA");
-    const signaturesValid = harness.verifyFileSignatures(
+
+    // Verify original downloaded content (should be valid)
+    const originalSignaturesValid = harness.verifyFileSignatures(
       userA.dbUser.user_id,
-      tamperedBase64,
-      uploadResult.test_data.encrypted_metadata,
-      fileRecord.pre_quantum_signature.toString("base64"),
-      fileRecord.post_quantum_signature.toString("base64"),
+      downloadData.file_content,
+      downloadData.metadata,
+      downloadData.pre_quantum_signature,
+      downloadData.post_quantum_signature,
       userAPublicKeyBundle
     );
-    expect(signaturesValid).toBe(false);
+    expect(originalSignaturesValid).toBe(true);
+
+    // Tamper the downloaded file content (append to base64 string)
+    const tamperedFileContentBase64 = downloadData.file_content + "TAMPERED";
+
+    // Verify tampered content (should be invalid)
+    const tamperedSignaturesValid = harness.verifyFileSignatures(
+      userA.dbUser.user_id,
+      tamperedFileContentBase64,
+      downloadData.metadata, // Use metadata from download
+      downloadData.pre_quantum_signature, // Use signature from download
+      downloadData.post_quantum_signature, // Use signature from download
+      userAPublicKeyBundle
+    );
+    expect(tamperedSignaturesValid).toBe(false);
   });
 
   test("server lying about key bundle", async () => {
     await harness.createUser("userA");
-    await harness.createUser("userB");
+    const userB = await harness.createUser("userB");
 
     const originalContent = "test file for key bundle verification";
     const uploadResult = await harness.uploadFile("userA", originalContent);
@@ -140,9 +155,19 @@ describe("File Sharing API", () => {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectSuccessfulResponse(shareResponse, 201);
+
+    // User B downloads the file
+    const downloadResponse = await harness.downloadFile(
+      "userB",
+      uploadResult.file_id
+    );
+    harness.expectSuccessfulResponse(downloadResponse);
+    const downloadData = (await downloadResponse.json()) as any;
 
     const fakeKeyBundle = {
       preQuantum: {
@@ -153,35 +178,28 @@ describe("File Sharing API", () => {
       },
     };
 
-    const fileRecord = await testDb
-      .select()
-      .from(filesTable)
-      .where(eq(filesTable.file_id, uploadResult.file_id))
-      .then((rows: any[]) => rows[0]);
-
-    if (!fileRecord) {
-      throw new Error("File record not found");
-    }
-
     const userA = harness.getUser("userA");
-    const signaturesValid = harness.verifyFileSignatures(
+
+    // Verify with the fake key bundle (should be invalid)
+    const signaturesValidWithFakeKey = harness.verifyFileSignatures(
       userA.dbUser.user_id,
-      uploadResult.test_data.encrypted_file_content,
-      uploadResult.test_data.encrypted_metadata,
-      fileRecord.pre_quantum_signature.toString("base64"),
-      fileRecord.post_quantum_signature.toString("base64"),
+      downloadData.file_content,
+      downloadData.metadata,
+      downloadData.pre_quantum_signature,
+      downloadData.post_quantum_signature,
       // @ts-expect-error: testing invalid key bundle
       fakeKeyBundle
     );
-    expect(signaturesValid).toBe(false);
+    expect(signaturesValidWithFakeKey).toBe(false);
 
+    // Verify with the correct key bundle (should be valid)
     const correctSignaturesValid = harness.verifyFileSignatures(
       userA.dbUser.user_id,
-      uploadResult.test_data.encrypted_file_content,
-      uploadResult.test_data.encrypted_metadata,
-      fileRecord.pre_quantum_signature.toString("base64"),
-      fileRecord.post_quantum_signature.toString("base64"),
-      userA.keyBundle.public
+      downloadData.file_content,
+      downloadData.metadata,
+      downloadData.pre_quantum_signature,
+      downloadData.post_quantum_signature,
+      userA.keyBundle.public // User A's actual public key
     );
     expect(correctSignaturesValid).toBe(true);
   });
@@ -196,7 +214,9 @@ describe("File Sharing API", () => {
       "userA",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectBadRequest(shareResponse);
     await harness.expectResponseMessage(
@@ -216,7 +236,9 @@ describe("File Sharing API", () => {
       "userA",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectForbidden(shareResponse);
     await harness.expectResponseMessage(shareResponse, "Unauthorized");
@@ -233,7 +255,9 @@ describe("File Sharing API", () => {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectSuccessfulResponse(firstShareResponse, 201);
 
@@ -242,7 +266,9 @@ describe("File Sharing API", () => {
       "userB",
       uploadResult.file_id,
       uploadResult.test_data.client_data.fek,
-      uploadResult.test_data.client_data.mek
+      uploadResult.test_data.client_data.mek,
+      uploadResult.test_data.client_data.fileNonce,
+      uploadResult.test_data.client_data.metadataNonce
     );
     harness.expectConflict(secondShareResponse);
     await harness.expectResponseMessage(
@@ -267,7 +293,9 @@ describe("File Sharing API", () => {
       "userB",
       upload1.file_id,
       upload1.test_data.client_data.fek,
-      upload1.test_data.client_data.mek
+      upload1.test_data.client_data.mek,
+      upload1.test_data.client_data.fileNonce,
+      upload1.test_data.client_data.metadataNonce
     );
 
     const listResponse = await harness.listFiles("userB");
@@ -279,6 +307,17 @@ describe("File Sharing API", () => {
     expect(listData.fileData[0].is_owner).toBe(false);
     expect(listData.fileData[0].shared_access).toBeDefined();
     expect(listData.fileData[0].shared_access.encrypted_fek).toBeDefined();
+    expect(
+      listData.fileData[0].shared_access.encrypted_fek_nonce
+    ).toBeDefined();
     expect(listData.fileData[0].shared_access.encrypted_mek).toBeDefined();
+    expect(
+      listData.fileData[0].shared_access.encrypted_mek_nonce
+    ).toBeDefined();
+    expect(listData.fileData[0].shared_access.file_content_nonce).toBeDefined();
+    expect(listData.fileData[0].shared_access.metadata_nonce).toBeDefined();
+    expect(
+      listData.fileData[0].shared_access.ephemeral_public_key
+    ).toBeDefined();
   });
 });

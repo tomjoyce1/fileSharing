@@ -5,7 +5,7 @@ import { filesTable, sharedAccessTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { APIError } from "~/utils/schema";
 
 export const schema = {
@@ -31,6 +31,7 @@ async function getFileAccess(
       .select({
         file_id: filesTable.file_id,
         storage_path: filesTable.storage_path,
+        metadata: filesTable.metadata,
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
@@ -57,9 +58,17 @@ async function getFileAccess(
       .select({
         file_id: filesTable.file_id,
         storage_path: filesTable.storage_path,
+        metadata: filesTable.metadata,
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
+        encrypted_fek: sharedAccessTable.encrypted_fek,
+        encrypted_fek_nonce: sharedAccessTable.encrypted_fek_nonce,
+        encrypted_mek: sharedAccessTable.encrypted_mek,
+        encrypted_mek_nonce: sharedAccessTable.encrypted_mek_nonce,
+        ephemeral_public_key: sharedAccessTable.ephemeral_public_key,
+        file_content_nonce: sharedAccessTable.file_content_nonce,
+        metadata_nonce: sharedAccessTable.metadata_nonce,
       })
       .from(filesTable)
       .innerJoin(
@@ -77,10 +86,23 @@ async function getFileAccess(
       return ok({
         file_id: sharedFile.file_id,
         storage_path: sharedFile.storage_path,
+        metadata: sharedFile.metadata,
         pre_quantum_signature: sharedFile.pre_quantum_signature,
         post_quantum_signature: sharedFile.post_quantum_signature,
         owner_user_id: sharedFile.owner_user_id,
         is_owner: false,
+        shared_access: {
+          encrypted_fek: sharedFile.encrypted_fek.toString("base64"),
+          encrypted_fek_nonce:
+            sharedFile.encrypted_fek_nonce.toString("base64"),
+          encrypted_mek: sharedFile.encrypted_mek.toString("base64"),
+          encrypted_mek_nonce:
+            sharedFile.encrypted_mek_nonce.toString("base64"),
+          ephemeral_public_key:
+            sharedFile.ephemeral_public_key.toString("base64"),
+          file_content_nonce: sharedFile.file_content_nonce.toString("base64"),
+          metadata_nonce: sharedFile.metadata_nonce.toString("base64"),
+        },
       });
     }
 
@@ -151,10 +173,12 @@ export async function POST(
   return Response.json(
     {
       file_content: fileContent,
+      metadata: file.metadata,
       pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
       post_quantum_signature: file.post_quantum_signature.toString("base64"),
       owner_user_id: file.owner_user_id,
       is_owner: file.is_owner,
+      ...(file.shared_access && { shared_access: file.shared_access }),
     },
     { status: 200 }
   );

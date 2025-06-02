@@ -17,11 +17,12 @@ export const schema = {
           .positive("File ID must be a positive integer"),
         shared_with_username: Username,
         encrypted_fek: Base64String,
-        encrypted_fek_salt: Base64String,
         encrypted_fek_nonce: Base64String,
         encrypted_mek: Base64String,
-        encrypted_mek_salt: Base64String,
         encrypted_mek_nonce: Base64String,
+        ephemeral_public_key: Base64String,
+        file_content_nonce: Base64String,
+        metadata_nonce: Base64String,
       })
       .strict(),
   },
@@ -103,11 +104,12 @@ async function createShareRecord(
   file_id: number,
   shareData: {
     encrypted_fek: string;
-    encrypted_fek_salt: string;
     encrypted_fek_nonce: string;
     encrypted_mek: string;
-    encrypted_mek_salt: string;
     encrypted_mek_nonce: string;
+    ephemeral_public_key: string;
+    file_content_nonce: string;
+    metadata_nonce: string;
   }
 ): Promise<Result<number, APIError>> {
   try {
@@ -117,16 +119,20 @@ async function createShareRecord(
         owner_user_id,
         shared_with_user_id,
         file_id,
+        file_content_nonce: Buffer.from(shareData.file_content_nonce, "base64"),
+        metadata_nonce: Buffer.from(shareData.metadata_nonce, "base64"),
         encrypted_fek: Buffer.from(shareData.encrypted_fek, "base64"),
-        encrypted_fek_salt: Buffer.from(shareData.encrypted_fek_salt, "base64"),
         encrypted_fek_nonce: Buffer.from(
           shareData.encrypted_fek_nonce,
           "base64"
         ),
         encrypted_mek: Buffer.from(shareData.encrypted_mek, "base64"),
-        encrypted_mek_salt: Buffer.from(shareData.encrypted_mek_salt, "base64"),
         encrypted_mek_nonce: Buffer.from(
           shareData.encrypted_mek_nonce,
+          "base64"
+        ),
+        ephemeral_public_key: Buffer.from(
+          shareData.ephemeral_public_key,
           "base64"
         ),
       })
@@ -170,11 +176,12 @@ export async function POST(
     file_id,
     shared_with_username,
     encrypted_fek,
-    encrypted_fek_salt,
     encrypted_fek_nonce,
     encrypted_mek,
-    encrypted_mek_salt,
     encrypted_mek_nonce,
+    ephemeral_public_key,
+    file_content_nonce,
+    metadata_nonce,
   } = req.validated.body;
   const ownershipResult = await doesOwnFile(file_id, owner.user_id);
   if (ownershipResult.isErr()) {
@@ -231,11 +238,12 @@ export async function POST(
     file_id,
     {
       encrypted_fek,
-      encrypted_fek_salt,
       encrypted_fek_nonce,
       encrypted_mek,
-      encrypted_mek_salt,
       encrypted_mek_nonce,
+      ephemeral_public_key,
+      file_content_nonce,
+      metadata_nonce,
     }
   );
   if (shareResult.isErr()) {

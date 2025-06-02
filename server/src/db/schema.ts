@@ -80,21 +80,28 @@ export const sharedAccessTable = sqliteTable(
         onUpdate: "cascade",
       }),
 
-    // Encrypted FEK (for decrypting file content)
-    encrypted_fek: blob("encrypted_fek", { mode: "buffer" }).notNull(),
-    encrypted_fek_salt: blob("encrypted_fek_salt", {
+    file_content_nonce: blob("file_content_nonce", {
       mode: "buffer",
     }).notNull(),
+
+    metadata_nonce: blob("metadata_nonce", {
+      mode: "buffer",
+    }).notNull(),
+
+    // Encrypted FEK (for decrypting file content)
+    encrypted_fek: blob("encrypted_fek", { mode: "buffer" }).notNull(),
     encrypted_fek_nonce: blob("encrypted_fek_nonce", {
       mode: "buffer",
     }).notNull(),
 
     // Encrypted MEK (for decrypting metadata)
     encrypted_mek: blob("encrypted_mek", { mode: "buffer" }).notNull(),
-    encrypted_mek_salt: blob("encrypted_mek_salt", {
+    encrypted_mek_nonce: blob("encrypted_mek_nonce", {
       mode: "buffer",
     }).notNull(),
-    encrypted_mek_nonce: blob("encrypted_mek_nonce", {
+
+    // Ephemeral public key for ECDH
+    ephemeral_public_key: blob("ephemeral_public_key", {
       mode: "buffer",
     }).notNull(),
 
