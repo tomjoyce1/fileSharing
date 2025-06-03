@@ -17,7 +17,6 @@ export type KeyBundlePublic = {
     identitySigningPublicKey: Uint8Array;
   };
   postQuantum: {
-    identityKemPublicKey: Uint8Array;
     identitySigningPublicKey: Uint8Array;
   };
 };
@@ -113,7 +112,7 @@ export function deserializeKeyBundlePublic(json: string | object): KeyBundlePubl
       identitySigningPublicKey: Uint8Array.from(atob(obj.preQuantum.identitySigningPublicKey), c => c.charCodeAt(0)),
     },
     postQuantum: {
-      identityKemPublicKey: Uint8Array.from(atob(obj.postQuantum.identityKemPublicKey), c => c.charCodeAt(0)),
+      
       identitySigningPublicKey: Uint8Array.from(atob(obj.postQuantum.identitySigningPublicKey), c => c.charCodeAt(0)),
     },
   };

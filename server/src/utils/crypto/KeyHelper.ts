@@ -4,6 +4,7 @@ import {
   createPrivateKey,
   createPublicKey,
 } from "node:crypto";
+import { Buffer } from "buffer";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import type {
   KeyBundlePrivate,
@@ -205,5 +206,3 @@ export function deserializeKeyBundlePublic(
     throw error;
   }
 }
-
-

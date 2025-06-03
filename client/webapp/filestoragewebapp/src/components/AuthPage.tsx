@@ -5,6 +5,8 @@ import { Buffer } from "buffer";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import { ml_kem1024 } from "@noble/post-quantum/ml-kem";
 import sodium from "libsodium-wrappers";
+import { saveObjectToIndexedDB, getObjectFromIndexedDB } from "@/lib/crypto/KeyUtils";
+import { serializeKeyBundlePublic, deserializeKeyBundlePublic } from "@/lib/crypto/KeyHelper";
 
 // Types for key pairs
 type KeyPair = {
@@ -307,6 +309,15 @@ console.log("mldsaTest length:", mldsaTest?.length);
             },
           };
 
+          // Save public key bundle to IndexedDB
+          const pubBundleString = JSON.stringify(key_bundle);
+          try {
+            await saveObjectToIndexedDB(`${username}_pubkey_bundle`, pubBundleString);
+            console.log(`[Register] Saved public key bundle to IndexedDB for ${username}`);
+          } catch (e) {
+            console.error(`[Register] Failed to save public key bundle to IndexedDB for ${username}:`, e);
+          }
+
           // Send to server (update endpoint to /api/keyhandler/register)
           console.log("[Register] Sending registration request to server...");
           console.log("[Register] Payload:", { username, key_bundle });
@@ -385,6 +396,32 @@ console.log("mldsaTest length:", mldsaTest?.length);
           // No token logic: just set username in localStorage if keepSignedIn
           localStorage.setItem("drive_username", username);
           localStorage.setItem("drive_password", password);  
+
+          // On login, also try to load and store the public key bundle if keys are present
+          try {
+            // Reconstruct the public key bundle from stored keys
+            const edRaw = await getKeyFromIndexedDB(`${username}_ed25519_priv`);
+            const x25519Raw = await getKeyFromIndexedDB(`${username}_x25519_priv`);
+            const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
+            if (edRaw && x25519Raw && mldsaRaw) {
+              // Rebuild the public key bundle (same as registration)
+              const key_bundle = {
+                preQuantum: {
+                  identityKemPublicKey: uint8ArrayToBase64(x25519PublicKeyToSPKIDER(x25519Raw.slice(-32))),
+                  identitySigningPublicKey: uint8ArrayToBase64(ed25519PublicKeyToSPKIDER(edRaw.slice(-32))),
+                },
+                postQuantum: {
+                  identityKemPublicKey: uint8ArrayToBase64(x25519PublicKeyToSPKIDER(x25519Raw.slice(-32))),
+                  identitySigningPublicKey: uint8ArrayToBase64(mldsaRaw.slice(-2592)),
+                },
+              };
+              const pubBundleString = JSON.stringify(key_bundle);
+              await saveObjectToIndexedDB(`${username}_pubkey_bundle`, pubBundleString);
+              console.log(`[Login] Saved public key bundle to IndexedDB for ${username}`);
+            }
+          } catch (e) {
+            console.error(`[Login] Failed to save public key bundle to IndexedDB for ${username}:`, e);
+          }
 
           setLoading(false);
           onAuthSuccess(username);
