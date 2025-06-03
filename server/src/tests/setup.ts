@@ -224,6 +224,15 @@ class TestFileHelper {
     return await this.makeAuthenticatedRequest("/api/fs/list", listBody, user);
   }
 
+  async deleteFile(file_id: number, user: TestUserData): Promise<Response> {
+    const deleteBody = { file_id };
+    return await this.makeAuthenticatedRequest(
+      "/api/fs/delete",
+      deleteBody,
+      user
+    );
+  }
+
   async getUserKeyBundle(
     username: string,
     requestingUser: TestUserData
@@ -459,6 +468,23 @@ class TestSharingHelper extends TestFileHelper {
       owner
     );
   }
+
+  async revokeFile(
+    file_id: number,
+    fileOwner: TestUserData,
+    username: string
+  ): Promise<Response> {
+    const revokeBody = {
+      file_id,
+      username,
+    };
+
+    return await this.makeAuthenticatedRequest(
+      "/api/fs/revoke",
+      revokeBody,
+      fileOwner
+    );
+  }
 }
 
 class TestEnvironment {
@@ -600,6 +626,10 @@ export class TestHarness {
     expect(response.status).toBe(409);
   }
 
+  expectNotFound(response: Response): void {
+    expect(response.status).toBe(404);
+  }
+
   async expectResponseMessage(
     response: Response,
     expectedMessage: string
@@ -664,6 +694,24 @@ export class TestHarness {
       sharedAccess,
       recipientPrivateKeyBundle
     );
+  }
+
+  async revokeFile(
+    fileOwnerUsername: string,
+    revokedFromUsername: string,
+    file_id: number
+  ): Promise<Response> {
+    const fileOwner = this.getUser(fileOwnerUsername);
+    return await this._sharingHelper.revokeFile(
+      file_id,
+      fileOwner,
+      revokedFromUsername
+    );
+  }
+
+  async deleteFile(username: string, file_id: number): Promise<Response> {
+    const user = this.getUser(username);
+    return await this._fileHelper.deleteFile(file_id, user);
   }
 
   async getUserKeyBundle(

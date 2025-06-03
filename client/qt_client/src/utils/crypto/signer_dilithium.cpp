@@ -1,87 +1,63 @@
 #include "Signer_Dilithium.h"
-#include <stdexcept>
 #include <sodium.h>
+#include <cstring>
+#include <stdexcept>
 
-/*
- * Post-quantum Dilithium2 implementation via liboqs’s OQS_SIG API.
- */
-
+/*––––  ctor / dtor  –––––*/
 Signer_Dilithium::Signer_Dilithium() {
-    if (sodium_init() < 0) {
-        throw std::runtime_error("libsodium initialization failed");
-    }
+    if (sodium_init() < 0)
+        throw std::runtime_error("libsodium init failed");
 
-    // Create a Dilithium2 context
-    _oqs = OQS_SIG_new(OQS_SIG_alg_dilithium_2);
-    if (_oqs == nullptr) {
-        throw std::runtime_error("OQS_SIG_new(Dilithium2) failed");
-    }
-
-    keygen();
+    _oqs = OQS_SIG_new(OQS_SIG_alg_ml_dsa_87);     // ← THE ONLY REAL CHANGE
+    if (!_oqs)
+        throw std::runtime_error("OQS_SIG_new(ml_dsa_87) failed");
 }
 
 Signer_Dilithium::~Signer_Dilithium() {
-    // Wipe secret key material
-    if (!_sk.empty()) {
-        sodium_memzero(_sk.data(), _sk.size());
-    }
-    // Free the liboqs context
+    if (!_sk.empty()) sodium_memzero(_sk.data(), _sk.size());
     OQS_SIG_free(_oqs);
 }
 
-Signer_Dilithium::Signer_Dilithium(const Signer_Dilithium&) {
-    throw std::logic_error("Signer_Dilithium copy-construction is forbidden");
-}
-
-Signer_Dilithium& Signer_Dilithium::operator=(const Signer_Dilithium&) {
-    throw std::logic_error("Signer_Dilithium copy-assignment is forbidden");
-}
-
-// Generate a fresh Dilithium2 keypair
+/*––––  keygen  –––––*/
 void Signer_Dilithium::keygen() {
-    // Resize to library‐specified lengths
-    _pk.resize(_oqs->length_public_key);
-    _sk.resize(_oqs->length_secret_key);
+    _pk.resize(_oqs->length_public_key);   // 2 592 B
+    _sk.resize(_oqs->length_secret_key);   // 4 896 B
 
-    if (OQS_SIG_keypair(
-            _oqs,
-            _pk.data(),
-            _sk.data()) != OQS_SUCCESS) {
+    if (OQS_SIG_keypair(_oqs, _pk.data(), _sk.data()) != OQS_SUCCESS)
         throw std::runtime_error("OQS_SIG_keypair failed");
-    }
 }
 
-// Return the public key bytes
-std::vector<uint8_t> Signer_Dilithium::pub() const {
-    return _pk;
-}
+/*––––  pub / sign / verify  –––––*/
+std::vector<uint8_t> Signer_Dilithium::pub() const { return _pk; }
 
-// Sign a message with Dilithium
-std::vector<uint8_t> Signer_Dilithium::sign(const std::vector<uint8_t>& msg) const {
-    std::vector<uint8_t> sig(_oqs->length_signature);
+std::vector<uint8_t>
+Signer_Dilithium::sign(const std::vector<uint8_t>& msg) const {
+    std::vector<uint8_t> sig(_oqs->length_signature);   // 4 595 B
     size_t siglen = 0;
 
-    if (OQS_SIG_sign(
-            _oqs,
-            sig.data(), &siglen,
-            msg.data(), msg.size(),
-            _sk.data()) != OQS_SUCCESS) {
+    if (OQS_SIG_sign(_oqs, sig.data(), &siglen,
+                     msg.data(), msg.size(),
+                     _sk.data()) != OQS_SUCCESS)
         throw std::runtime_error("OQS_SIG_sign failed");
-    }
+
     sig.resize(siglen);
     return sig;
 }
 
-// Verify a Dilithium signature
 bool Signer_Dilithium::verify(const std::vector<uint8_t>& msg,
-                              const std::vector<uint8_t>& signature) const {
-    if (signature.size() != _oqs->length_signature) {
-        return false;
-    }
-    // Returns OQS_SUCCESS (0) on valid, non-zero on failure
-    return OQS_SIG_verify(
-               _oqs,
-               msg.data(), msg.size(),
-               signature.data(), signature.size(),
-               _pk.data()) == OQS_SUCCESS;
+                              const std::vector<uint8_t>& sig) const {
+    if (sig.size() != _oqs->length_signature) return false;
+
+    return OQS_SIG_verify(_oqs,
+                          msg.data(), msg.size(),
+                          sig.data(), sig.size(),
+                          _pk.data()) == OQS_SUCCESS;
+}
+
+/*––––  import existing secret-key  –––––*/
+void Signer_Dilithium::loadPrivateKey(const uint8_t* rawSk, size_t len) {
+    if (len != _oqs->length_secret_key)
+        throw std::runtime_error("Signer_Dilithium::loadPrivateKey: wrong len");
+
+    _sk.assign(rawSk, rawSk + len);         // deep-copy into our vector
 }

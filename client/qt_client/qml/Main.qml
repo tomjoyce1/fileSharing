@@ -1,20 +1,37 @@
-// qml/Main.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material
-import QtQuick.Layouts 1.15
+import QtQuick.Controls.Material 2.15
+import QtQuick.Window 2.15
 
 ApplicationWindow {
     id: appWin
-    width: 960; height: 540
+    width: 960
+    height: 540
     visible: true
     title: qsTr("Shhhare")
+
+    FontLoader {
+        id: materialIconsFont
+        source: "qrc:/assets/fonts/MaterialIcons-Regular.ttf"
+    }
+    FontLoader {
+        id: productSansRegular
+        source: "qrc:/assets/fonts/ProductSansRegular.ttf"
+    }
+    FontLoader {
+        id: productSansBold
+        source: "qrc:/assets/fonts/ProductSansBold.ttf"
+    }
+
+
+
+
+
     Material.theme: Material.Light
+    Material.primary: Material.DeepPurple
     Material.accent: Material.DeepPurple
 
-    // Are we past auth?
     property bool loggedIn: false
-    // Which auth screen? "login" or "register"
     property string authView: "login"
 
     Loader {

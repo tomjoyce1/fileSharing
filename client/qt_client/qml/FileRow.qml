@@ -9,12 +9,6 @@ Item {
     width: ListView.view ? ListView.view.width : 640
     height: 48
 
-    // load Material Icons font
-    FontLoader {
-        id: materialIcons
-        source: "qrc:/resources/fonts/MaterialIcons-Regular.ttf"
-    }
-
     // --- restore these two properties! ---
     property string fileIcon: {
         var ext = fileName.split(".").pop().toLowerCase()
@@ -24,7 +18,7 @@ Item {
         case "jpg": case "jpeg": case "png": return "\uE3F4"
         case "ppt": case "pptx": return "\uE24E"
         case "xls": case "xlsx": return "\uE24F"
-        case "doc": case "docx": return "\uE24D"
+        case "doc": case "docx": return "\ue873"
         default:      return "\uE24D"
         }
     }
@@ -69,7 +63,6 @@ Item {
 
         // file-type icon
         Label {
-            font.family: materialIcons.name
             font.pixelSize: 20
             text: fileIcon
             color: fileColor

@@ -3,18 +3,17 @@ import QtQuick.Controls 2.15
 import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
-ApplicationWindow {
+Item {                      //  ◄── was ApplicationWindow
+    anchors.fill: parent
     id: appWin
     width: 960
     height: 540
     property bool loggedIn: false
     visible: true
-    title: qsTr("Gobbler — main")
 
     Material.theme: Material.Light
     Material.accent: Material.DeepPurple
-    // a very light purple background
-    color: Material.color(Material.DeepPurple, Material.Shade50)
+    // a very light purple backgroun
 
     RowLayout {
         anchors.fill: parent
