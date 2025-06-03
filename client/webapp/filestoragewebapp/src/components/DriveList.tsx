@@ -230,6 +230,53 @@ export default function DriveList({
     await onFileOpen(item);
   };
 
+  const handleRevokeAccess = async (item: DriveItem) => {
+    const usernameToRevoke = window.prompt('Enter the username to revoke access for:');
+    if (!usernameToRevoke || !usernameToRevoke.trim()) return;
+    try {
+      const username = localStorage.getItem('drive_username') || '';
+      let password = localStorage.getItem('drive_password') || '';
+      if (!password) {
+        password = window.prompt('Enter your password to unlock your keys:') || '';
+        if (!password) throw new Error('Password required to unlock keys');
+      }
+      // Load private keys for signing
+      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
+      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+      if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
+      const privateKeyBundle = {
+        preQuantum: {
+          identitySigning: { privateKey: ed25519Priv },
+        },
+        postQuantum: {
+          identitySigning: { privateKey: mldsaPriv },
+        },
+      };
+      const body = { file_id: Number(item.id), username: usernameToRevoke.trim() };
+      const { headers, body: bodyString } = createAuthenticatedRequest(
+        'POST',
+        '/api/fs/revoke',
+        body,
+        username,
+        privateKeyBundle
+      );
+      const res = await fetch('/api/fs/revoke', {
+        method: 'POST',
+        headers,
+        body: bodyString
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        setError('Failed to revoke access: ' + errText);
+        return;
+      }
+      alert('Access revoked for user: ' + usernameToRevoke.trim());
+      // Optionally refresh file list here if needed
+    } catch (err) {
+      setError('Failed to revoke access: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800">
       {/* List Header */}
@@ -314,6 +361,13 @@ export default function DriveList({
                     >
                       <FolderPen className="mr-2 h-4 w-4" />
                       Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-400"
+                      onClick={() => handleRevokeAccess(item)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Revoke Access
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-red-400"
