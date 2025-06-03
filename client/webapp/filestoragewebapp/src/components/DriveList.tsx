@@ -17,6 +17,13 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { useDriveFiles } from "@/app/drive/useDriveFiles";
 import { useEffect, useState } from "react";
+import sodium from 'libsodium-wrappers';
+import { getObjectFromIndexedDB, getKeyFromIndexedDB } from '@/lib/crypto/KeyUtils';
+import { extractX25519RawPublicKeyFromDER } from '@/lib/crypto/KeyHelper';
+import { encryptWithSharedSecret } from '@/app/drive/utils/encryption';
+import { randomBytes } from '@noble/ciphers/webcrypto';
+import { deserializeKeyBundlePublic } from '@/lib/crypto/KeyHelper';
+import { createAuthenticatedRequest } from '@/app/drive/utils/encryption';
 
 export interface FileItem {
   id: string;
@@ -40,11 +47,110 @@ type Props = {
   setPage: (page: number) => void;
   page: number;
   hasNextPage: boolean;
+  onShare: (item: DriveItem, recipient: string) => void;
 };
 
+async function handleShare(item: DriveItem, recipientUsername: string) {
+  if (!recipientUsername || !recipientUsername.trim()) {
+    alert('No username entered for sharing.');
+    return;
+  }
+  try {
+    // 1. Get client_data for this file (contains fek, mek, nonces)
+    const clientData = await getObjectFromIndexedDB(item.id.toString());
+    if (!clientData) throw new Error('Missing decryption keys for this file.');
 
-const handleShare = (item: DriveItem) => {
-  alert(`Share "${item.name}" with username X.`);
+    // 2. Get current user's username and private key bundle
+    const username = localStorage.getItem('drive_username') || '';
+    let password = localStorage.getItem('drive_password') || '';
+    if (!password) {
+      password = window.prompt('Enter your password to unlock your keys:') || '';
+      if (!password) throw new Error('Password required to unlock keys');
+    }
+    const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
+    const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+    if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
+    const privateKeyBundle = {
+      preQuantum: {
+        identitySigning: { privateKey: ed25519Priv },
+      },
+      postQuantum: {
+        identitySigning: { privateKey: mldsaPriv },
+      },
+    };
+
+    // 3. Sign the getbundle request
+    const { headers, body } = createAuthenticatedRequest(
+      'POST',
+      '/api/keyhandler/getbundle',
+      { username: recipientUsername },
+      username,
+      privateKeyBundle
+    );
+    const keyResponse = await fetch('/api/keyhandler/getbundle', {
+      method: 'POST',
+      headers,
+      body
+    });
+    if (!keyResponse.ok) throw new Error('Failed to fetch recipient public key');
+    const keyData = await keyResponse.json();
+    const recipientPublicBundle = deserializeKeyBundlePublic(keyData.key_bundle);
+    const recipientRawKem = extractX25519RawPublicKeyFromDER(recipientPublicBundle.preQuantum.identityKemPublicKey);
+
+    // 4. Generate ephemeral key pair (libsodium)
+    await sodium.ready;
+    const ephKeyPair = sodium.crypto_kx_keypair();
+
+    // 5. Derive shared secret
+    const sharedSecret = sodium.crypto_scalarmult(ephKeyPair.privateKey, recipientRawKem);
+
+    // 6. Encrypt FEK and MEK with shared secret
+    const fekNonce = randomBytes(16);
+    const mekNonce = randomBytes(16);
+    const encryptedFek = encryptWithSharedSecret(new Uint8Array(clientData.fek), sharedSecret, fekNonce);
+    const encryptedMek = encryptWithSharedSecret(new Uint8Array(clientData.mek), sharedSecret, mekNonce);
+
+    // 7. Prepare share body (all binary fields as base64)
+    const shareBody = {
+      file_id: Number(item.id),
+      shared_with_username: recipientUsername,
+      encrypted_fek: Buffer.from(encryptedFek).toString('base64'),
+      encrypted_fek_nonce: Buffer.from(fekNonce).toString('base64'),
+      encrypted_mek: Buffer.from(encryptedMek).toString('base64'),
+      encrypted_mek_nonce: Buffer.from(mekNonce).toString('base64'),
+      ephemeral_public_key: Buffer.from(ephKeyPair.publicKey).toString('base64'),
+      file_content_nonce: Buffer.from(clientData.fileNonce).toString('base64'),
+      metadata_nonce: Buffer.from(clientData.metadataNonce).toString('base64')
+    };
+
+    // 8. Call share API using documented API, but authenticated
+    const { headers: shareHeaders, body: shareBodyString } = createAuthenticatedRequest(
+      'POST',
+      '/api/fs/share',
+      shareBody,
+      username,
+      privateKeyBundle
+    );
+    const shareRes = await fetch('/api/fs/share', {
+      method: 'POST',
+      headers: shareHeaders,
+      body: shareBodyString
+    });
+    if (!shareRes.ok) {
+      const errText = await shareRes.text();
+      throw new Error('Failed to share file: ' + errText);
+    }
+    alert(`File shared with ${recipientUsername}!`);
+  } catch (err) {
+    alert('Share failed: ' + (err instanceof Error ? err.message : String(err)));
+  }
+}
+
+const handleSharePrompt = (item: DriveItem) => {
+  const recipient = window.prompt('Enter the username to share with:');
+  if (recipient && recipient.trim()) {
+    handleShare(item, recipient.trim());
+  }
 };
 
 export default function DriveList({
@@ -57,6 +163,7 @@ export default function DriveList({
   page,
   setPage,
   hasNextPage,
+  onShare,
 }: Props)
  {
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +262,7 @@ export default function DriveList({
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-white"
-                      onClick={() => handleShare(item)}
+                      onClick={() => handleSharePrompt(item)}
                     >
                       <Share className="mr-2 h-4 w-4" />
                       Share

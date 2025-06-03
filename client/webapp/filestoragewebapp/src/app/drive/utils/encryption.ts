@@ -238,3 +238,15 @@ export async function uploadFile(
     };
   }
 }
+
+// Encrypt data with shared secret using AES-CTR
+export function encryptWithSharedSecret(data: Uint8Array, sharedSecret: Uint8Array, nonce: Uint8Array): Uint8Array {
+  const cipher = ctr(sharedSecret, nonce);
+  return cipher.encrypt(data);
+}
+
+// Decrypt data with shared secret using AES-CTR
+export function decryptWithSharedSecret(encrypted: Uint8Array, sharedSecret: Uint8Array, nonce: Uint8Array): Uint8Array {
+  const cipher = ctr(sharedSecret, nonce);
+  return cipher.decrypt(encrypted);
+}

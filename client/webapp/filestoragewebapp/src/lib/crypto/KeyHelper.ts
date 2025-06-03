@@ -138,3 +138,14 @@ export function extractEd25519RawPublicKeyFromDER(der: Uint8Array | Buffer): Uin
   }
   throw new Error("Invalid DER-encoded Ed25519 public key");
 }
+
+// Extracts the raw 32-byte X25519 public key from a DER-encoded SPKI buffer
+export function extractX25519RawPublicKeyFromDER(der: Uint8Array | Buffer): Uint8Array {
+  // X25519 SPKI DER header is always 12 bytes
+  // 0x30 0x2a 0x30 0x05 0x06 0x03 0x2b 0x65 0x6e 0x03 0x21 0x00
+  // [12 bytes header][32 bytes raw key]
+  if (der.length === 44 && der[0] === 0x30 && der[1] === 0x2a) {
+    return der.slice(12, 44);
+  }
+  throw new Error("Invalid DER-encoded X25519 public key");
+}
