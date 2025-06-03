@@ -23,7 +23,7 @@ async function sha256Hex(base64str: string): Promise<string> {
 }
 
 // Canonical string for file signature (matches backend)
-async function createFileSignatureCanonical(username: string, file_content: string, metadata: string): Promise<string> {
+export async function createFileSignatureCanonical(username: string, file_content: string, metadata: string): Promise<string> {
   const fileContentHash = await sha256Hex(file_content);
   const metadataHash = await sha256Hex(metadata);
   const canonical = `${username}|${fileContentHash}|${metadataHash}`;

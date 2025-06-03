@@ -7,6 +7,8 @@ import { deserializeKeyBundlePublic } from '@/lib/crypto/KeyHelper';
 import sodium from 'libsodium-wrappers';
 import { ml_dsa87 } from '@noble/post-quantum/ml-dsa';
 import { createAuthenticatedRequest } from './utils/encryption';
+import { extractEd25519RawPublicKeyFromDER } from '@/lib/crypto/KeyHelper';
+import { createFileSignatureCanonical } from './utils/encryption';
 
 // Placeholder types for missing definitions
 type DriveItem = { id: string; type: string };
@@ -146,8 +148,14 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
       let pubkeyBundle = null;
       try {
         const pubkeyBundleStr = await getObjectFromIndexedDB(`${username}_pubkey_bundle`);
-        if (!pubkeyBundleStr) throw new Error('No public key bundle found');
-        pubkeyBundle = deserializeKeyBundlePublic(pubkeyBundleStr);
+if (!pubkeyBundleStr) throw new Error('No public key bundle found');
+
+const parsedBundle = typeof pubkeyBundleStr === 'string'
+  ? JSON.parse(pubkeyBundleStr)
+  : pubkeyBundleStr;
+
+pubkeyBundle = deserializeKeyBundlePublic(parsedBundle);
+
         console.log('[FileActions][Download] Loaded public key bundle:', pubkeyBundle);
       } catch (e) {
         console.error('[FileActions][Download] Failed to load/deserialize public key bundle:', e);
@@ -158,18 +166,40 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
       // Verify signatures
       try {
         await sodium.ready;
-        const canonicalString = data.canonical_string || '';
+        // Use the file owner's username for canonical string
+        const ownerUsername = data.owner_username || data.owner || file.owner_username || username;
+        // Ensure metadata is a base64 string
+        let metadataBase64;
+        if (typeof data.metadata === 'string') {
+          metadataBase64 = data.metadata;
+        } else if (data.metadata && data.metadata.type === 'Buffer' && Array.isArray(data.metadata.data)) {
+          metadataBase64 = btoa(String.fromCharCode(...data.metadata.data));
+        } else {
+          throw new Error('Invalid metadata format');
+        }
+        const canonicalString = await createFileSignatureCanonical(ownerUsername, data.file_content, metadataBase64);
         const canonicalBytes = new TextEncoder().encode(canonicalString);
         const preQuantumSig = Uint8Array.from(atob(data.pre_quantum_signature), c => c.charCodeAt(0));
-        const ed25519Pub = pubkeyBundle.preQuantum.identitySigningPublicKey;
-        const preQuantumValid = sodium.crypto_sign_verify_detached(preQuantumSig, canonicalBytes, ed25519Pub);
-        console.log('[FileActions][Download] Pre-quantum signature valid:', preQuantumValid);
-
+        // Extract raw Ed25519 public key from DER
+        const ed25519Der = pubkeyBundle.preQuantum.identitySigningPublicKey;
+        const ed25519Raw = extractEd25519RawPublicKeyFromDER(
+          ed25519Der instanceof Uint8Array ? ed25519Der : new Uint8Array(ed25519Der)
+        );
+        // Log all relevant values for debugging
+        console.log('[Debug][Frontend] Canonical string:', canonicalString);
+        console.log('[Debug][Frontend] Ed25519 DER (base64):', btoa(String.fromCharCode(...ed25519Der)));
+        console.log('[Debug][Frontend] Ed25519 raw (base64):', btoa(String.fromCharCode(...ed25519Raw)));
+        console.log('[Debug][Frontend] Pre-quantum signature (base64):', data.pre_quantum_signature);
+        // Post-quantum logs
         const postQuantumSig = Uint8Array.from(atob(data.post_quantum_signature), c => c.charCodeAt(0));
         const mldsaPub = pubkeyBundle.postQuantum.identitySigningPublicKey;
+        console.log('[Debug][Frontend] Post-quantum public key (base64):', btoa(String.fromCharCode(...mldsaPub)));
+        console.log('[Debug][Frontend] Post-quantum signature (base64):', data.post_quantum_signature);
+        // Now verify
+        const preQuantumValid = sodium.crypto_sign_verify_detached(preQuantumSig, canonicalBytes, ed25519Raw);
+        console.log('[FileActions][Download] Pre-quantum signature valid:', preQuantumValid);
         const postQuantumValid = ml_dsa87.verify(mldsaPub, canonicalBytes, postQuantumSig);
         console.log('[FileActions][Download] Post-quantum signature valid:', postQuantumValid);
-
         if (!preQuantumValid || !postQuantumValid) {
           setError('Signature verification failed. File may be tampered.');
           console.error('[FileActions][Download] Signature verification failed.');

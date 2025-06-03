@@ -1,5 +1,7 @@
 import sodium from 'libsodium-wrappers';
 import { ml_dsa87 } from '@noble/post-quantum/ml-dsa';
+// import { createPublicKey } from 'crypto';
+import { z } from 'zod';
 
 export type KeyBundlePrivate = {
   preQuantum: {
@@ -46,7 +48,6 @@ export async function generateKeyBundle(): Promise<{ private: KeyBundlePrivate; 
       identitySigningPublicKey: new Uint8Array(ed25519.publicKey),
     },
     postQuantum: {
-      identityKemPublicKey: new Uint8Array(x25519.publicKey), // PQ KEM not implemented, reuse X25519 for now
       identitySigningPublicKey: new Uint8Array(mldsa.publicKey),
     },
   };
@@ -89,17 +90,25 @@ export function serializeKeyBundlePublic(bundle: KeyBundlePublic): string {
       identitySigningPublicKey: signingPublicKeySPKIDER,
     },
     postQuantum: {
-      identityKemPublicKey: kemPublicKeySPKIDER, // Reuse preQuantum KEM key for now
       identitySigningPublicKey: btoa(String.fromCharCode(...bundle.postQuantum.identitySigningPublicKey)), // ML-DSA-87: send raw bytes
     },
   });
 }
 
 // Deserialize public key bundle from base64 JSON
-export function deserializeKeyBundlePublic(json: string | object): KeyBundlePublic {
-  const obj = typeof json === 'string' ? JSON.parse(json) : json;
-  const kemKeyBuffer = Buffer.from(obj.preQuantum.identityKemPublicKey, 'base64');
-  const signingKeyBuffer = Buffer.from(obj.preQuantum.identitySigningPublicKey, 'base64');
+export function deserializeKeyBundlePublic(
+  serialized: any // Accept plain object
+): KeyBundlePublic {
+  console.log("[Debug] Serialized Key Bundle:", serialized);
+
+  const kemKeyBuffer = Buffer.from(
+    serialized.preQuantum.identityKemPublicKey,
+    "base64"
+  );
+  const signingKeyBuffer = Buffer.from(
+    serialized.preQuantum.identitySigningPublicKey,
+    "base64"
+  );
 
   console.log("Decoded KEM Key Buffer:", kemKeyBuffer);
   console.log("Decoded Signing Key Buffer:", signingKeyBuffer);
@@ -108,12 +117,24 @@ export function deserializeKeyBundlePublic(json: string | object): KeyBundlePubl
 
   return {
     preQuantum: {
-      identityKemPublicKey: Uint8Array.from(atob(obj.preQuantum.identityKemPublicKey), c => c.charCodeAt(0)),
-      identitySigningPublicKey: Uint8Array.from(atob(obj.preQuantum.identitySigningPublicKey), c => c.charCodeAt(0)),
+      identityKemPublicKey: new Uint8Array(kemKeyBuffer),
+      identitySigningPublicKey: new Uint8Array(signingKeyBuffer),
     },
     postQuantum: {
-      
-      identitySigningPublicKey: Uint8Array.from(atob(obj.postQuantum.identitySigningPublicKey), c => c.charCodeAt(0)),
+      identitySigningPublicKey: new Uint8Array(
+        Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
+      ),
     },
   };
+}
+
+// Extracts the raw 32-byte Ed25519 public key from a DER-encoded SPKI buffer
+export function extractEd25519RawPublicKeyFromDER(der: Uint8Array | Buffer): Uint8Array {
+  // Ed25519 SPKI DER header is always 12 bytes
+  // 0x30 0x2a 0x30 0x05 0x06 0x03 0x2b 0x65 0x70 0x03 0x21 0x00
+  // [12 bytes header][32 bytes raw key]
+  if (der.length === 44 && der[0] === 0x30 && der[1] === 0x2a) {
+    return der.slice(12, 44);
+  }
+  throw new Error("Invalid DER-encoded Ed25519 public key");
 }
