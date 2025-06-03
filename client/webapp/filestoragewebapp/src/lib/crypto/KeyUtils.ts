@@ -204,3 +204,40 @@ export async function decryptMetadata(file: any): Promise<any> {
     throw new KeyError('Failed to decrypt metadata', err as Error);
   }
 }
+
+/**
+ * Save an object to IndexedDB (for clientData, etc.)
+ */
+export async function saveObjectToIndexedDB(
+  keyName: string,
+  obj: any
+): Promise<void> {
+  const db = await openKeyDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("keys", "readwrite");
+    const store = tx.objectStore("keys");
+    const request = store.put(obj, keyName);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Get an object from IndexedDB (for clientData, etc.)
+ */
+export async function getObjectFromIndexedDB(
+  keyName: string
+): Promise<any | null> {
+  const db = await openKeyDB();
+  return new Promise<any | null>((resolve, reject) => {
+    const tx = db.transaction("keys", "readonly");
+    const store = tx.objectStore("keys");
+    const request = store.get(keyName);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => reject(tx.error);
+  });
+}

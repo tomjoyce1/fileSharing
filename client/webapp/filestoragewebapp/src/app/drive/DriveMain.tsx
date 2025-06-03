@@ -7,7 +7,8 @@ import { useFileActions } from "./useFileActions";
 import { useKeyValidation } from "./useKeyValidation";
 import type { FileItem, DriveItem } from "./driveTypes";
 import { uploadFile } from "./utils/encryption";
-import { getKeyFromIndexedDB } from "@/lib/crypto/KeyUtils";
+import { getKeyFromIndexedDB, saveKeyToIndexedDB, getObjectFromIndexedDB, saveObjectToIndexedDB } from "@/lib/crypto/KeyUtils";
+import { ctr } from '@noble/ciphers/aes';
 
 export default function DriveMain() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -36,10 +37,44 @@ export default function DriveMain() {
       const processed = await Promise.all(
         files.map(async (file) => {
           try {
-            const metadata = await decryptMetadata(file);
-            console.log("Decrypted metadata:", metadata);
+            // Try IndexedDB first
+            let clientData = null;
+            try {
+              clientData = await getObjectFromIndexedDB(file.file_id.toString());
+              console.log(`[DriveMain][List] getObjectFromIndexedDB(${file.file_id}):`, clientData);
+            } catch (e) {
+              console.warn(`[DriveMain][List] Error reading from IndexedDB for file_id=${file.file_id}:`, e);
+            }
+            // Fallback to localStorage for backward compatibility
+            if (!clientData) {
+              const clientDataStr = localStorage.getItem(`client_data_${file.file_id}`);
+              if (clientDataStr) {
+                clientData = JSON.parse(clientDataStr);
+                console.log(`[DriveMain][List] Fallback to localStorage for file_id=${file.file_id}:`, clientData);
+              }
+            }
+            if (!clientData) throw new Error('Missing decryption keys for this file.');
+            const mek = new Uint8Array(clientData.mek);
+            const metadataNonce = new Uint8Array(clientData.metadataNonce || clientData.metadata_nonce);
 
 
+            // loggin
+            console.log("MEK length:", mek.length, "Expected 32");
+            console.log("metadataNonce length:", metadataNonce.length, "Expected 16");
+            console.log("MEK:", mek);
+            console.log("metadataNonce:", metadataNonce);
+            
+
+            const encryptedMetadata = typeof file.metadata === 'string'
+              ? Uint8Array.from(atob(file.metadata), c => c.charCodeAt(0))
+              : file.metadata;
+
+            const metadataCipher = ctr(mek, metadataNonce);
+            const decryptedMetadataBytes = metadataCipher.decrypt(encryptedMetadata);
+            const metadataString = new TextDecoder().decode(decryptedMetadataBytes);
+            const metadata = JSON.parse(metadataString);
+
+            console.log(`[DriveMain][List] Decrypted metadata for file_id=${file.file_id}:`, metadata);
             let fileType: FileItem["fileType"] = 'document';
             if (metadata.file_type?.startsWith('image')) fileType = 'image';
             else if (metadata.file_type?.startsWith('audio')) fileType = 'audio';
@@ -59,10 +94,7 @@ export default function DriveMain() {
             };
           } catch (e) {
             // If decryption fails, skip file
-               console.warn("Failed to decrypt metadata for file:", file, e);
-       
-
-            
+            console.warn(`[DriveMain][List] Failed to decrypt metadata for file_id=${file.file_id}:`, file, e);
             return null;
           }
         })
@@ -134,7 +166,21 @@ export default function DriveMain() {
         ""
       );
       if (!result.success) throw new Error(result.error || "Upload failed");
-      // Refresh file list
+      // Save client_data to IndexedDB for decryption
+      if (result.fileId && result.clientData) {
+        try {
+          console.log(`[DriveMain][Upload] Saving clientData to IndexedDB for fileId=${result.fileId}:`, result.clientData);
+          await saveObjectToIndexedDB(
+            result.fileId.toString(),
+            result.clientData
+          );
+          console.log(`[DriveMain][Upload] Successfully saved clientData to IndexedDB for fileId=${result.fileId}`);
+        } catch (e) {
+          console.error(`[DriveMain][Upload] Failed to save clientData to IndexedDB for fileId=${result.fileId}:`, e);
+        }
+      } else {
+        console.warn(`[DriveMain][Upload] No clientData or fileId to save to IndexedDB. result=`, result);
+      }
       setPage(1);
     } catch (err) {
       setUploadError((err as Error).message);
