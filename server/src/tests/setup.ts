@@ -210,6 +210,15 @@ class TestFileHelper {
     return await this.makeAuthenticatedRequest("/api/fs/list", listBody, user);
   }
 
+  async deleteFile(file_id: number, user: TestUserData): Promise<Response> {
+    const deleteBody = { file_id };
+    return await this.makeAuthenticatedRequest(
+      "/api/fs/delete",
+      deleteBody,
+      user
+    );
+  }
+
   async getUserKeyBundle(
     username: string,
     requestingUser: TestUserData
@@ -684,6 +693,11 @@ export class TestHarness {
       fileOwner,
       revokedFromUsername
     );
+  }
+
+  async deleteFile(username: string, file_id: number): Promise<Response> {
+    const user = this.getUser(username);
+    return await this._fileHelper.deleteFile(file_id, user);
   }
 
   async getUserKeyBundle(
