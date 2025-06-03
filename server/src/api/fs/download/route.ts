@@ -181,6 +181,33 @@ export async function POST(
   }
 
   const fileContent = fileContentResult.value;
+
+  // Add debug logging for signature verification troubleshooting
+  // You may need to reconstruct the canonical string here if possible, or log what is sent to the client
+  const preQuantumDER = file.pre_quantum_signature
+    ? file.pre_quantum_signature.toString("base64")
+    : "";
+  const postQuantumDER = file.post_quantum_signature
+    ? file.post_quantum_signature.toString("base64")
+    : "";
+  // If you have access to the public key bundle here, log it as well (DER and raw)
+  console.log("[Debug][Download] file_id:", file_id);
+  console.log(
+    "[Debug][Download] metadata (base64):",
+    Buffer.isBuffer(file.metadata)
+      ? file.metadata.toString("base64")
+      : file.metadata
+  );
+  console.log(
+    "[Debug][Download] pre_quantum_signature (base64):",
+    preQuantumDER
+  );
+  console.log(
+    "[Debug][Download] post_quantum_signature (base64):",
+    postQuantumDER
+  );
+  // If you can, log the canonical string used for signing (if available)
+
   return Response.json(
     {
       file_content: fileContent,
