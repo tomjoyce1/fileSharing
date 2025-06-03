@@ -175,9 +175,50 @@ export default function DriveList({
     }
   }, [error]);
 
-  const handleDelete = (item: DriveItem) => {
-    if (window.confirm(`Delete "${item.name}"?`)) {
+  const handleDelete = async (item: DriveItem) => {
+    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    try {
+      // Authenticated request to /api/fs/delete
+      const username = localStorage.getItem('drive_username') || '';
+      let password = localStorage.getItem('drive_password') || '';
+      if (!password) {
+        password = window.prompt('Enter your password to unlock your keys:') || '';
+        if (!password) throw new Error('Password required to unlock keys');
+      }
+      // Load private keys for signing
+      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
+      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+      if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
+      const privateKeyBundle = {
+        preQuantum: {
+          identitySigning: { privateKey: ed25519Priv },
+        },
+        postQuantum: {
+          identitySigning: { privateKey: mldsaPriv },
+        },
+      };
+      const body = { file_id: Number(item.id) };
+      const { headers, body: bodyString } = createAuthenticatedRequest(
+        'POST',
+        '/api/fs/delete',
+        body,
+        username,
+        privateKeyBundle
+      );
+      const res = await fetch('/api/fs/delete', {
+        method: 'POST',
+        headers,
+        body: bodyString
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        setError('Failed to delete file: ' + errText);
+        return;
+      }
+      // Call parent onDelete to refresh list
       onDelete(item);
+    } catch (err) {
+      setError('Failed to delete file: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 

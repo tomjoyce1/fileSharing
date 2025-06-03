@@ -33,11 +33,13 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
     const fileItem = ensureFileItem(item);
     void (async () => {
       try {
-        const response = await fetch(`/api/fs/delete/${fileItem.id}`, {
+        const response = await fetch(`/api/fs/delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_id: Number(fileItem.id) })
         });
         if (!response.ok) throw new Error('Failed to delete file');
+        // Refresh file list after successful delete
         void fetchFiles(page);
       } catch (err) {
         setError('Failed to delete file');
