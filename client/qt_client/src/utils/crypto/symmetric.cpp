@@ -3,6 +3,10 @@
 #include <openssl/evp.h>
 #include <stdexcept>
 
+/**
+ * Chris C++ Requirements:
+ * - std::unique_ptr
+ */
 
 EVP_CIPHER_CTX* Symmetric::create_ctx() {
     EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();

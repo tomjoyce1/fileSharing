@@ -8,6 +8,10 @@ HttpResponse::HttpResponse() : statusCode(0)
 HttpResponse::HttpResponse(int code, const std::map<std::string, std::string>& hdrs, const std::string& b) : statusCode(code), headers(hdrs), body(b)
 {}
 
+/**
+ *  Chris C++ Requirements:
+ *  - Dynamic Memory Allocation using new and delete
+ */
 HttpResponse HttpResponse::fromRaw(const std::string& raw) {
     // Allocate a mutable character buffer on the heap
     char* buffer = new char[raw.size() + 1];

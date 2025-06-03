@@ -1,11 +1,20 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <nlohmann/json.hpp>
+#include "../utils/networking/HttpRequest.h"
+#include "../utils/networking/HttpResult.h"
+#include "../utils/ClientStore.h"
+#include "../utils/crypto/KeyBundle.h"
+#include "../utils/HandlerUtils.h"
+#include "../Config.h"
 
-#include "utils/networking/AsioHttpClient.h"     // networking
-#include "utils/crypto/KeyBundle.h"         // creates key bundle
-#include "utils/networking/HttpRequest.h"
-#include "utils/ClientStore.h"
+/**
+ * The RegisterHandler class TODO describe
+ *
+ * Chris C++ Requirement:
+ * - Call by Value
+ */
 
 class RegisterHandler : public QObject {
     Q_OBJECT
@@ -24,8 +33,6 @@ signals:
 private:
     void doRegister(QString username, QString password); // runs in worker
 
-    ClientStore* m_store;
-    AsioHttpClient net_;       // re-usable client (single-thread use)
-    const QString kHost_  = "localhost";
-    const int     kPort_  = 3000;
+    ClientStore* store;
+    AsioHttpClient net_;
 };

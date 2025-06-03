@@ -19,50 +19,13 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
-#include "LoginHandler.h"
-#include "RegisterHandler.h"
+#include "handlers/LoginHandler.h"
+#include "handlers/RegisterHandler.h"
 #include "handlers/FileUploadHandler.h"
 #include "utils/ClientStore.h"
 #include <QDir>
 #include <QDebug>
 
-
-// ───────────────────────────── testHttps ─────────────────────────────
-//
-// Do an HTTPS GET to "www.example.com" on port 443, path "/".
-//
-void testHttps() {
-    std::cout << "===== testHttps() → GET https://www.example.com/ =====\n";
-    try {
-        AsioSslClient sslClient;
-
-        // If you want to trust the system CA store, pass empty string:
-        sslClient.init("");
-
-        // Alternatively, if you have a custom CA, pass that PEM path:
-        // sslClient.init("C:/path/to/your/rootCA.pem");
-
-        // Build a GET request for "/"
-        HttpRequest req(
-            HttpRequest::Method::GET,
-            "/",
-            "",
-            { { "Host", "www.example.com" } }
-            );
-
-        HttpResponse resp = sslClient.sendRequest("www.example.com", 443, req);
-        std::cout << "HTTPS/1.1 " << resp.statusCode << "\n";
-        std::string truncated = resp.body.substr(0, std::min<size_t>(512, resp.body.size()));
-        std::cout << "<BODY (first 512 chars)>\n" << truncated << "\n";
-        if (resp.body.size() > 512) {
-            std::cout << "...[truncated]...\n";
-        }
-    }
-    catch (const std::exception& ex) {
-        std::cout << "testHttps() threw: " << ex.what() << "\n";
-    }
-    std::cout << "===== end of testHttps() =====\n\n";
-}
 
 static QString defaultStorePath() {
 #ifdef Q_OS_WIN
@@ -78,6 +41,8 @@ int main(int argc, char *argv[])
 
     QQuickStyle::setStyle("Material");
     QQmlApplicationEngine engine;
+
+    HandlerUtils::runAsync([]{});
 
     QString storeFile = defaultStorePath();
     ClientStore clientStore(storeFile.toStdString());

@@ -3,6 +3,15 @@
 #include "HttpResponse.h"
 #include <string>
 
+/**
+ * The NetworkClient class
+ *
+ * Chris C++ Requirements:
+ * - Function Overriding and Base Class Pointers (AsioHttpClient overrides)
+ * - Run-time (Virtual Functions and Dynamic Dispatch)
+ * - Pure Virtual Functions and Abstract Classes
+ * - Virtual Destructors
+ */
 class NetworkClient {
 public:
     virtual ~NetworkClient();

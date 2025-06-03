@@ -1,40 +1,39 @@
 #include "AsioHttpClient.h"
 #include <boost/asio/connect.hpp>
+#include <boost/asio/write.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/streambuf.hpp>
-#include <boost/asio/write.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/buffer.hpp>
 #include <sstream>
 #include <iostream>
 
 AsioHttpClient::AsioHttpClient()
     : ioContext_(std::make_shared<boost::asio::io_context>()),
     resolver_(std::make_shared<boost::asio::ip::tcp::resolver>(*ioContext_)),
-    socket_(nullptr)
-{
-    // nothing to do in plain-HTTP init
-}
+    socket_(nullptr),
+    timer_(std::make_unique<boost::asio::steady_timer>(*ioContext_))
+{}
 
 AsioHttpClient::~AsioHttpClient() {
-    try {
-        if (socket_ && socket_->is_open()) {
-            socket_->shutdown(boost::asio::ip::tcp::socket::shutdown_both);
-            socket_->close();
-        }
-    } catch (...) {
-        // Destructors must not throw
+    if (socket_ && socket_->is_open()) {
+        socket_->close();
     }
 }
 
+/**
+ * Synchronous, blocking HTTP/1.1 over plain TCP.
+ */
 HttpResponse AsioHttpClient::sendRequest(
     const std::string& host,
     int                 port,
     const HttpRequest&  request,
-    int                 /*timeoutSeconds – unused for plain TCP*/
+    int                 /*timeoutSeconds – unused in this sync path*/
     ) {
     boost::system::error_code ec;
 
-    // 1) Resolve hostname → endpoints (e.g. "example.com", "80")
+    // 1) Resolve hostname → endpoints
     auto endpoints = resolver_->resolve(host, std::to_string(port), ec);
     if (ec) {
         std::map<std::string, std::string> emptyHeaders;
@@ -45,10 +44,10 @@ HttpResponse AsioHttpClient::sendRequest(
             );
     }
 
-    // 2) Recreate a fresh TCP socket
+    // 2) Fresh TCP socket
     socket_.reset(new boost::asio::ip::tcp::socket(*ioContext_));
 
-    // 3) Connect to the first available endpoint
+    // 3) Connect
     boost::asio::connect(*socket_, endpoints, ec);
     if (ec) {
         std::map<std::string, std::string> emptyHeaders;
@@ -59,7 +58,7 @@ HttpResponse AsioHttpClient::sendRequest(
             );
     }
 
-    // 4) Build the raw HTTP request string and send it
+    // 4) Send raw HTTP request
     std::string rawRequest = request.toString();
     boost::asio::write(*socket_, boost::asio::buffer(rawRequest), ec);
     if (ec) {
@@ -100,7 +99,7 @@ HttpResponse AsioHttpClient::sendRequest(
         }
     }
 
-    // 7) Determine content length, or read chunked if needed
+    // 7) Determine content length or chunked encoding
     bool chunked = false;
     {
         auto it = responseHeaders.find("Transfer-Encoding");
@@ -199,7 +198,7 @@ HttpResponse AsioHttpClient::sendRequest(
         }
     }
 
-    // 9) Build raw response string so HttpResponse::fromRaw(...) can parse it again
+    // 9) Rebuild raw response so HttpResponse::fromRaw can parse it again
     std::ostringstream fullResp;
     fullResp << statusLine << "\r\n";
     for (auto& kv : responseHeaders) {
@@ -210,3 +209,4 @@ HttpResponse AsioHttpClient::sendRequest(
 
     return HttpResponse::fromRaw(fullResp.str());
 }
+

@@ -1,30 +1,13 @@
 #include "RegisterHandler.h"
-
-#include <QFutureWatcher>
-#include <QMetaObject>
 #include <QDebug>
-#include <QThread>
-#include <QtConcurrent>
-
-// Only needed if you manipulate JSON directly
+#include <QMetaObject>
 #include <nlohmann/json.hpp>
-
-/* ───────────────────────────────────────────────────────────── */
-
-static inline QString tid()       // handy thread-id helper
-{
-    return QStringLiteral("[%1]")
-        .arg(reinterpret_cast<quintptr>(QThread::currentThreadId()), 0, 16);
-}
-
-/* ───────────────────────────────────────────────────────────── */
+#include "../utils/networking/HttpResponse.h"
 
 RegisterHandler::RegisterHandler(ClientStore *store, QObject *parent)
     : QObject(parent),
-    m_store(store)
-{
-    qDebug() << tid() << "RegisterHandler ctor – store =" << store;
-}
+    store(store)
+{}
 
 /* ───────────────────────── registerUser ────────────────────── */
 
@@ -32,26 +15,19 @@ void RegisterHandler::registerUser(const QString &username,
                                    const QString &password,
                                    const QString &confirm)
 {
-    qDebug() << tid() << "registerUser() entered with:"
-             << username << "(pwd len" << password.size() << ")";
-
     /* basic client-side validation */
     if (username.isEmpty() || password.isEmpty() || confirm.isEmpty()) {
         emit registerResult("Error", "All fields are required");
-        qDebug() << tid() << "→ early-return: missing field(s)";
         return;
     }
     if (password != confirm) {
         emit registerResult("Error", "Passwords do not match");
-        qDebug() << tid() << "→ early-return: passwords mismatch";
         return;
     }
 
     /* run the heavy work off the UI thread */
     auto fut = QtConcurrent::run([=] {
-        qDebug() << tid() << "worker      → doRegister() starts";
         doRegister(username, password);
-        qDebug() << tid() << "worker      → doRegister() ends";
     });
 
     /* keep this object alive until the worker finishes */
@@ -68,26 +44,30 @@ void RegisterHandler::doRegister(QString username, QString password)
     /* ❶  Create the KeyBundle (X25519, Ed25519, Dilithium-5) */
     KeyBundle kb;
 
-    /* ❷  Build POST body */
-    QByteArray body = QByteArrayLiteral("{\"username\":\"")
-                      + username.toUtf8()
-                      + "\",\"key_bundle\":"
-                      + QByteArray::fromStdString(kb.toJson()) + '}';
+    /* ❷  Build JSON body using nlohmann::json */
+    nlohmann::json j;
+    j["username"]   = username.toStdString();
+    j["key_bundle"] = kb.toJsonPublic();
+    std::string bodyString = j.dump();
 
-    qDebug() << tid() << "doRegister(): JSON body size =" << body.size();
+    /* ❸  Build HTTP request—but do NOT supply a “Host” header here.
+            HttpRequest::toString() will auto-inject it from Config::instance(). */
+    HttpRequest req(
+        HttpRequest::Method::POST,
+        "/api/keyhandler/register",
+        bodyString,
+        {
+            // Only supply content-type. “Host” will be added below by toString().
+            { "Content-Type", "application/json" }
+        }
+        );
 
-    /* ❸  Build HTTP request */
-    HttpRequest req(HttpRequest::Method::POST,
-                    "/api/keyhandler/register",
-                    body.toStdString(),
-                    { { "Host", kHost_.toStdString() },
-                     { "Content-Type", "application/json" } });
+    /* ❹  Send synchronously using the new overload.  No need to pass host/port. */
+    AsioHttpClient httpClient;
+    httpClient.init(""); // no TLS
 
-    /* ❹  Send over plain HTTP */
-    qDebug() << tid() << "doRegister(): sending HTTP POST …";
-    HttpResponse resp = net_.sendRequest(kHost_.toStdString(), kPort_, req);
-
-    qDebug() << tid() << "doRegister(): HTTP status =" << resp.statusCode;
+    // This version of sendRequest(...) pulls host/port from Config::instance() automatically:
+    HttpResponse resp = httpClient.sendRequest(req);
 
     /* ❺  Interpret server response */
     QString title, msg;
@@ -96,26 +76,26 @@ void RegisterHandler::doRegister(QString username, QString password)
         ClientStore::UserInfo u;
         u.username  = username.toStdString();
         u.keybundle = kb;
-         qDebug() << "above setUser";
-        if (m_store) m_store->setUser(u);
+        qDebug() << "above setUser";
+        if (store) store->setUser(u);
         qDebug() << "below setUser";
 
         title = "Success";
         msg   = "Registration successful – you are now logged in.";
-    } else {
+    }
+    else {
         title = "Error";
         msg   = QStringLiteral("Server replied %1: %2")
                   .arg(resp.statusCode)
                   .arg(QString::fromStdString(resp.body));
     }
 
+    /* ❻  Emit result back on the UI thread */
     QMetaObject::invokeMethod(
         this,
         [this, title, msg]() {
-            qDebug() << tid() << "UI-thread → emit registerResult:" << title << "|" << msg;
             emit registerResult(title, msg);
         },
         Qt::QueuedConnection
         );
-
 }

@@ -6,6 +6,10 @@
 
 /**
  * Takes an arbitrary-length byte string as input and produces a fixed-length digest
+ *
+ * Chris C++ requirement:
+ * - Function Overloading: Implement multiple functions with the same name but different parameter lists (in terms of number or types of parameters) to perform related operations.
+ * - Compile-time (Function and Operator Overloading)
  */
 namespace Hash {
     /**

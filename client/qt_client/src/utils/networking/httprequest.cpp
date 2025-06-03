@@ -1,5 +1,6 @@
 #include "HttpRequest.h"
 #include <bits/stdc++.h>
+#include "../../config.h"
 
 HttpRequest::HttpRequest(Method m, const std::string& path, const std::string& body, const std::map<std::string, std::string>& headers) : method_(m), path_(path), body_(body), headers_(headers)
 {}
@@ -25,7 +26,7 @@ void HttpRequest::addHeader(const std::string& name, const std::string& value) {
     this->headers_[name] = value;
 }
 
-// ─── HttpRequest::toString()  (replace the whole function) ────────────────
+// HttpRequest.cpp (replace toString() with change to auto‐inject Host if missing)
 std::string HttpRequest::toString() const
 {
     std::string methodStr;
@@ -40,29 +41,38 @@ std::string HttpRequest::toString() const
 
     bool haveCT  = false;
     bool haveCL  = false;
+    bool haveHost = false;
 
-    // 1) user-supplied headers
+    // 1) user‐supplied headers
     for (const auto& kv : headers_) {
         std::string keyLower = kv.first;
         std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
-        if (keyLower == "content-type")  haveCT = true;
-        if (keyLower == "content-length") haveCL = true;
+        if (keyLower == "content-type")   haveCT  = true;
+        if (keyLower == "content-length") haveCL  = true;
+        if (keyLower == "host")           haveHost = true;
 
         req += kv.first + ": " + kv.second + "\r\n";
     }
 
-    // 2) implicit Content-Type for requests that carry a body
+    // 2) Implicit Content-Type for JSON if body is nonempty
     if (!haveCT && !body_.empty()) {
         req += "Content-Type: application/json\r\n";
     }
 
-    // 3) Content-Length only when we actually have a body
+    // 3) Implicit Content-Length if body is nonempty
     if (!haveCL && !body_.empty()) {
         req += "Content-Length: " + std::to_string(body_.size()) + "\r\n";
     }
 
-    req += "\r\n";                // blank line to end headers
-    req += body_;                 // body may be empty
+    // 4) Implicit Host from Config if missing
+    if (!haveHost) {
+        auto& cfg = Config::instance();
+        req += "Host: " + cfg.serverHost + ":" + std::to_string(cfg.serverPort) + "\r\n";
+    }
+
+    req += "\r\n";   // end headers
+    req += body_;    // body (may be empty)
     return req;
 }
+
 

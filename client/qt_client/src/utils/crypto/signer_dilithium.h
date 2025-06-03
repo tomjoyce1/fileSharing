@@ -9,6 +9,9 @@
  *
  * Uses liboqs via OQS_SIG_alg_ml_dsa_87 so that key sizes match “ml_dsa87”
  * in @noble/post-quantum.
+ *
+ * Chris C++ Requirements:
+ * - Constructors and Destructors
  */
 class Signer_Dilithium : public Signer {
 public:

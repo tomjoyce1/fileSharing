@@ -83,10 +83,6 @@ find_package(nlohmann_json REQUIRED)
 # 6) Add your executable
 add_executable(qt_client
     src/main.cpp
-    src/LoginHandler.cpp
-    src/LoginHandler.h
-    src/RegisterHandler.cpp
-    src/RegisterHandler.h
 
     # … all your crypto+network files …
     src/utils/crypto/cryptobase.h
@@ -100,8 +96,8 @@ add_executable(qt_client
     src/utils/crypto/signer_ed.cpp
     src/utils/crypto/signer_dilithium.h
     src/utils/crypto/signer_dilithium.cpp
-    src/utils/crypto/kdf.h
-    src/utils/crypto/kdf.cpp
+
+
     src/utils/crypto/hash.h
     src/utils/crypto/hash.cpp
     src/utils/crypto/keybundle.h
@@ -115,12 +111,22 @@ add_executable(qt_client
     src/utils/networking/networkclient.cpp
     src/utils/networking/asiosslclient.h
     src/utils/networking/asiosslclient.cpp
-    src/utils/networking/signinghelper.h src/utils/networking/signinghelper.cpp
+
     src/utils/crypto/derutils.h src/utils/crypto/derutils.cpp
     src/utils/networking/asiohttpclient.h src/utils/networking/asiohttpclient.cpp
     src/utils/crypto/FileClientData.h
     src/utils/clientstore.h src/utils/clientstore.cpp
+
+    src/handlers/LoginHandler.cpp
+    src/handlers/LoginHandler.h
+    src/handlers/RegisterHandler.cpp
+    src/handlers/RegisterHandler.h
+
     src/handlers/fileuploadhandler.h src/handlers/fileuploadhandler.cpp
+    src/utils/handlerutils.h
+    src/utils/NetworkAuthUtils.h
+    src/config.h src/config.cpp
+    src/utils/networking/HttpResult.h
 )
 
 # ─────────────────────────────────────────────────────────────

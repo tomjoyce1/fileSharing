@@ -1,25 +1,39 @@
 #pragma once
 
 #include "NetworkClient.h"
+#include "HttpRequest.h"
+#include "HttpResponse.h"
+#include "HttpResult.h"        // see below for definition
 #include <boost/asio.hpp>
 #include <memory>
 #include <string>
+#include <chrono>
+#include "../../config.h"
 
 /**
- * AsioHttpClient
+ * A callback signature for asyncSendRequest:
  *
- * A version of NetworkClient that does *plain HTTP* (no TLS).
- * This is the same as AsioSslClient but without the SSL layer.
+ *   void myCallback(const HttpResult& result);
+ *
+ * The client will invoke this exactly once, either on success or on any failure.
+ *
+ * Chris C++ Requirements:
+ * - Default Arguments
+ * - Run-time (Virtual Functions and Dynamic Dispatch)
+ * - std::unique_ptr
+ * - std::shared_ptr
  */
+using HttpCallback = void(*)(const HttpResult&);
+
 class AsioHttpClient : public NetworkClient {
 public:
     AsioHttpClient();
     ~AsioHttpClient() override;
 
-    // For plain HTTP, init() does nothing (no CA to load)
+    // For plain HTTP, init() is a no-op:
     void init(const std::string& /*caCertPath*/) override { /* no-op */ }
 
-    // Send an HTTP request over plain TCP and return the parsed HttpResponse
+    /** Synchronous HTTP/1.1 over plain TCP (blocking). */
     HttpResponse sendRequest(
         const std::string& host,
         int                 port,
@@ -27,22 +41,26 @@ public:
         int                 timeoutSeconds = DEFAULT_TIMEOUT
         ) override;
 
+    HttpResponse sendRequest(const HttpRequest&  request,
+                             int timeoutSeconds = DEFAULT_TIMEOUT)
+    {
+        auto& cfg = Config::instance();
+        return sendRequest(cfg.serverHost,
+                           cfg.serverPort,
+                           request,
+                           timeoutSeconds);
+    }
+
+
 private:
-    // I/O context for asynchronous operations (we do them synchronously in sendRequest())
-    std::shared_ptr<boost::asio::io_context> ioContext_;
 
-    // Resolver to turn "host:port" → endpoints (IP+port)
-    std::shared_ptr<boost::asio::ip::tcp::resolver> resolver_;
+    // Underlying Asio objects:
+    std::shared_ptr<boost::asio::io_context>           ioContext_;
+    std::shared_ptr<boost::asio::ip::tcp::resolver>     resolver_;
+    std::unique_ptr<boost::asio::ip::tcp::socket>       socket_;
+    std::unique_ptr<boost::asio::steady_timer>          timer_;
 
-    // The plain TCP socket we will wrap in each sendRequest() call
-    // (We recreate it per‐request so it is fresh each time.)
-    std::unique_ptr<boost::asio::ip::tcp::socket> socket_;
-
-    // Delete copy/assignment so we don't accidentally duplicate sockets/contexts
+    // Disable copy/assignment
     AsioHttpClient(const AsioHttpClient&) = delete;
     AsioHttpClient& operator=(const AsioHttpClient&) = delete;
-
-    // Allow move if needed
-    AsioHttpClient(AsioHttpClient&&) noexcept = default;
-    AsioHttpClient& operator=(AsioHttpClient&&) noexcept = default;
 };

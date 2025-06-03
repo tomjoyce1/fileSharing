@@ -10,8 +10,10 @@
 
 /**
  * Holds “who am I?” (username + KeyBundle) and “which files?” (map file_id→FileClientData).
- *
  * On disk, this is a single JSON at ~/.ssshare/client_store.json.
+ *
+ * Chris C++ Requirement:
+ * - Call by Reference
  */
 class ClientStore {
 public:

@@ -8,6 +8,9 @@
  * Signer_Ed
  *
  * Pre-quantum Ed25519 implementation using libsodium’s crypto_sign API.
+ *
+ * Chris C++ Requirements:
+ * - Pointers and Arrays
  */
 class Signer_Ed : public Signer {
 public:

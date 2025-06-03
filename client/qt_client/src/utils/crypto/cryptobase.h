@@ -9,8 +9,10 @@
  * C++ Concepts Illustrated:
  * - Pure Virtual Functions and Abstract Classes
  * - Virtual Destructors
- * - Protected Members (NONCE_LEN, KEY_LEN)
- * - Pointer Arithmetic via zeroizeBuffer()
+ * - Access Specifiers
+ * - Use of protected Members in Inheritance
+ * - Pointers: Declaration, Initialization, and Dereferencing
+ * - Pointer Arithmetic
  */
 class CryptoBase {
 public:

@@ -5,6 +5,12 @@
 #include <sodium.h>
 #include <nlohmann/json.hpp>
 
+/**
+ * The KeyBundle class
+ *
+ * Chris C++ Requirements:
+ * - Copy Constructor and Assignment Operator
+ */
 class KeyBundle {
 public:
     /**

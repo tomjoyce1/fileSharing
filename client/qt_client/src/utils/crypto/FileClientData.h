@@ -18,25 +18,29 @@
  *   - zeroizeBuffer()
  *
  * Also includes inline base64 helpers so you do not need a separate utils file.
+ *
+ * Chris C++ Requirements:
+ * - Access Specifiers
+ * - this Pointer
  */
 struct FileClientData : public CryptoBase {
     // AES‐256: 32‐byte FEK for file content
-    std::array<uint8_t, KEY_LEN>    fek{};
+    std::array<uint8_t, KEY_LEN> fek{};
 
     // 16‐byte IV for file content
-    std::array<uint8_t, NONCE_LEN>   file_nonce{};
+    std::array<uint8_t, NONCE_LEN> file_nonce{};
 
     // AES‐256: 32‐byte MEK for metadata
-    std::array<uint8_t, KEY_LEN>    mek{};
+    std::array<uint8_t, KEY_LEN> mek{};
 
     // 16‐byte IV for metadata
-    std::array<uint8_t, NONCE_LEN>   metadata_nonce{};
+    std::array<uint8_t, NONCE_LEN> metadata_nonce{};
 
     // The integer file_id assigned by the server, or 0 if not yet assigned
-    uint64_t                         file_id{0};
+    uint64_t file_id{0};
 
-    // Original filename on disk (for reference)
-    std::string                      filename;
+    // Original filename on disk
+    std::string filename;
 
     //───────────────────────────────────────────────────────────────────────────
     // 1) Default constructor (zero‐initializes everything)

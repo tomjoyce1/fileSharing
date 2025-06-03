@@ -9,6 +9,10 @@
  *
  * Pre-quantum Key Encapsulation Mechanism via X25519 (Curve25519 DH).
  * Used to share File Encryption Keys
+ *
+ * Chris C++ Requirements:
+ * - Types of Inheritance: Implement and demonstrate at least one form of inheritance (single, multiple) by creating derived classes from base classes.
+ * - Constructor and Destructor Behavior in Inheritance
  */
 class Kem_Ecdh : public Kem {
 public:
