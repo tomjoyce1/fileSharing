@@ -1,55 +1,67 @@
+// main.cpp
+#include <iostream>
+#include <string>
+
+
+// Include Qt bits only if you want to integrate with QML.
+// For a simple console‐only test, you don’t need QGuiApplication at all.
+// But since your question asked for “in main create and run a testHttp() function”,
+// we’ll keep a minimal main() that kicks off both tests in the console.
+
+// If you prefer purely console, comment out all Qt includes and use:
+// int main() { testHttp(); testHttps(); return 0; }
+
+#include <QCoreApplication>
+#include "utils/networking/AsioSslClient.h"
+#include "utils/networking/HttpRequest.h"
+#include "utils/networking/HttpResponse.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include "LoginHandler.h"
-#include "RegisterHandler.h"
-#include <oqs/oqs.h>
-#include <oqs/kem.h>
-#include <sodium.h>
+#include <QQuickStyle>
+#include "handlers/LoginHandler.h"
+#include "handlers/RegisterHandler.h"
+#include "handlers/FileUploadHandler.h"
+#include "utils/ClientStore.h"
+#include <QDir>
+#include <QDebug>
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-static void cryptoSelfTest()
-{
-    if (sodium_init() < 0) qFatal("libsodium failed");
-
-    const char *alg = "Kyber1024";               // any enabled alg name
-    OQS_KEM *kem = OQS_KEM_new(alg);
-    if (!kem) qFatal("liboqs failed to init %s", alg);
-
-    qDebug() << "PQ KEM in use:" << kem->method_name;
-    OQS_KEM_free(kem);
+static QString defaultStorePath() {
+#ifdef Q_OS_WIN
+    return QDir::homePath() + "/AppData/Roaming/.ssshare/client_store.json";
+#else
+    return QDir::homePath() + "/.ssshare/client_store.json";
+#endif
 }
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
+
+    QQuickStyle::setStyle("Material");
     QQmlApplicationEngine engine;
 
-    // expose our two handlers
-    LoginHandler    loginHandler;
-    RegisterHandler registerHandler;
-    engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
-    engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+    HandlerUtils::runAsync([]{});
 
-    // load the single root QML
+    QString storeFile = defaultStorePath();
+    ClientStore clientStore(storeFile.toStdString());
+    clientStore.load();
+
+
+    LoginHandler    loginHandler;
+    RegisterHandler registerHandler(&clientStore);
+    FileUploadHandler* uploadHandler = new FileUploadHandler(&clientStore);
+
+    engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
+   engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+    engine.rootContext()->setContextProperty("UploadHandler", uploadHandler);
+
+    // testHttps();
+
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return -1;
 
-    cryptoSelfTest();
     return app.exec();
 }
-
-

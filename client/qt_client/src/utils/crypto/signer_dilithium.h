@@ -5,39 +5,39 @@
 #include <cstdint>
 
 /**
- * Signer_Dilithium
+ * Signer_Dilithium → actually ML-DSA-87 (Dilithium-5 parameter set)
  *
- * Post-quantum digital signature using CRYSTALS-Dilithium2 via liboqs.
+ * Uses liboqs via OQS_SIG_alg_ml_dsa_87 so that key sizes match “ml_dsa87”
+ * in @noble/post-quantum.
  *
- *
- * C++ Concepts:
- *  - Inheritance & Polymorphism
- *  - RAII: allocate + free OQS_SIG context
- *  - Rule of Five: delete copy, default move
- *  - Secure Memory: wipe secret key on destruction
+ * Chris C++ Requirements:
+ * - Constructors and Destructors
  */
 class Signer_Dilithium : public Signer {
 public:
-    Signer_Dilithium();
+    Signer_Dilithium();                       /* creates ML-DSA-87 context   */
     ~Signer_Dilithium() override;
 
-    // Disallow copying
-    Signer_Dilithium(const Signer_Dilithium&);
-    Signer_Dilithium& operator=(const Signer_Dilithium&);
-
-    // Allow moving
-    Signer_Dilithium(Signer_Dilithium&&) noexcept = default;
+    // forbid copy, allow move
+    Signer_Dilithium(const Signer_Dilithium&)            = delete;
+    Signer_Dilithium& operator=(const Signer_Dilithium&) = delete;
+    Signer_Dilithium(Signer_Dilithium&&)  noexcept       = default;
     Signer_Dilithium& operator=(Signer_Dilithium&&) noexcept = default;
 
-    // Inherited Signer interface
-    void keygen() override;
-    std::vector<uint8_t> pub() const override;
+    // Signer interface --------------------------------------------------------
+    void                keygen() override;
+    std::vector<uint8_t> pub()  const override;
     std::vector<uint8_t> sign(const std::vector<uint8_t>& msg) const override;
     bool verify(const std::vector<uint8_t>& msg,
-                const std::vector<uint8_t>& signature) const override;
+                const std::vector<uint8_t>& sig) const override;
+
+    // helpers -----------------------------------------------------------------
+    void   loadPrivateKey(const uint8_t* sk, size_t len);  // import existing sk
+    size_t skLength()      const { return _oqs->length_secret_key; }
+    const uint8_t* getSecretKeyBuffer() const { return _sk.data(); }
 
 private:
-    OQS_SIG * _oqs;                   // liboqs signature context
-    std::vector<uint8_t> _pk;         // public key bytes
-    std::vector<uint8_t> _sk;         // secret key bytes
+    OQS_SIG*             _oqs;   /* liboqs context for ML-DSA-87            */
+    std::vector<uint8_t> _pk;    /* public key  (2 592 bytes)               */
+    std::vector<uint8_t> _sk;    /* secret key (4 896 bytes)                */
 };

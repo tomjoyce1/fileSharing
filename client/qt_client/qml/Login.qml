@@ -1,216 +1,71 @@
-// main.qml
+// qml/Login.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Controls.Material
 import QtQuick.Layouts 1.15
 
-
 Item {
-    visible: true
-    width: 800
-    height: 400
+    width: 800; height: 400
+    Material.theme: Material.Light
+    Material.accent: Material.DeepPurple
 
-    Dialog{
-        id: errorDialog
-        title:"Login failed"
-        modal:true
-        standardButtons: Dialog.Ok
-        visible:false
-
-        contentItem: Text{
-            id:errorText
-            text:""
-            wrapMode:Text.Wrap
-            width:parent.width
-        }
+    Dialog {
+        id: errorDialog; modal: true; standardButtons: Dialog.Ok
+        title: qsTr("Login failed")
+        contentItem: Text { text: errorText; wrapMode: Text.Wrap; width: parent.width }
     }
 
-
-
-    FontLoader {
-        id: productSansRegular
-        source: "qrc:/assets/product-sans/Product Sans Regular.ttf"
-    }
-
-
-    FontLoader {
-        id: productSansBold
-        source: "qrc:/assets/product-sans/Product Sans Bold.ttf"
-    }
-
-    FontLoader {
-        id: productSansItalic
-        source: "qrc:/assets/product-sans/Product Sans Italic.ttf"
-    }
-
-    // font.pixelSize: 16
-
-
-    Rectangle{
+    ColumnLayout {
         anchors.centerIn: parent
-        width: parent.width * 0.25
-        height: columnLayout.implicitHeight + 100
-        // color: "gray"
-                color: "#ffffff"
-        radius: 12
+        spacing: 16
+        width: parent.width * 0.3
 
-        ColumnLayout {
-            id:columnLayout
-            anchors.fill:parent
-            anchors.margins:20
-            spacing:15
+        Label {
+            text: qsTr("Sign in to Shhhare")
+            font.pixelSize: 28; horizontalAlignment: Text.AlignHCenter
+        }
 
-            // to hold image
-            Rectangle{
-                height:50
-                width:parent.width
-                anchors.horizontalCenter: parent.horizontalCenter
+        TextField {
+            id: usernameField
+            placeholderText: qsTr("Username")
+            Layout.fillWidth: true; Layout.preferredHeight: 44
+        }
 
+        TextField {
+            id: passwordField
+            placeholderText: qsTr("Password")
+            echoMode: TextInput.Password
+            Layout.fillWidth: true; Layout.preferredHeight: 44
+        }
 
-                Image {
-                     source:"qrc:/assets/BLACKs.png"
-                    fillMode: Image.PreserveAspectFit
-                    height:50
-                    anchors.centerIn:parent
+        Button {
+            text: qsTr("Login")
+            Layout.fillWidth: true; Layout.preferredHeight: 44
+            onClicked: loginHandler.validateLogin(usernameField.text, passwordField.text)
+        }
 
-
-                }
-
-            }
-
-
-            Label {
-                text: "Sign in to Shhhare"
-                font.pixelSize: 26
-                font.family: productSansRegular.name
-                color: "black"
-                horizontalAlignment: Text.AlignHCenter
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-
-
-            TextField {
-                id: usernameField
-                placeholderText: "Username"
-                Layout.fillWidth:true
-                Layout.preferredHeight:40
-
-                background:Rectangle{
-                    color:"white"
-                    radius:5
-                    border.color:"#ccc"
-                }
-                padding:10
-
-            }
-
-            TextField {
-                id: passwordField
-                placeholderText: "Password"
-                echoMode: TextInput.Password
-                Layout.fillWidth:true
-                Layout.preferredHeight:40
-                background:Rectangle{
-                    color:"white"
-                    radius:5
-                    border.color:"#ccc"
-                }
-                padding:10
-
-            }
-
-            Rectangle{
-                RowLayout{
-                    Layout.alignment: Qt.AlignVCenter
-                    // anchors.centerIn:parent
-                    spacing:8
-
-                    CheckBox{
-                        Layout.alignment: Qt.AlignVCenter
-                        width:16
-                        height:16
-
-                    }
-                    Label {
-                        text: "Remember for 30 days"
-                        font.pixelSize: 12
-                        font.family: productSansBold.name
-                        color:"black"
-                        // horizontalAlignment: Text.AlignHCenter
-                        Layout.alignment: Qt.AlignVCenter
-
-
-                    }
-
-                }
-
-
-            }
-            Item {
-                height: 2
-            }
-            Button {
-                Layout.fillWidth:true
-                Layout.preferredHeight:40
-
-                background: Rectangle {
-                    color: "#000000"
-                    radius: 5
-                }
-                contentItem:Text{
-                    text:"Login"
-                    color:"white"
-                    font.bold:true
-                    // anchors.centerIn:parent
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.alignment: Qt.AlignVCenter
-                    font.family: productSansBold.name
-                }
-
-                onClicked: {
-                    loginHandler.validateLogin(usernameField.text, passwordField.text)
-                }
-
-
-            }
-            Connections {
-                target: loginHandler
-                function onLoginResult(title, message) {
-                    if (title === "Success") {
-
-                        appWin.loggedIn = true
-                    } else {
-                        errorText.text=message
-                        errorDialog.title=title
-                        errorDialog.open()
-                        console.log(message)
-                    }
-                }
-            }
-            Label {
-                textFormat: Text.RichText
-                text: "Don't have an account? <a href='signUpPage' style='font-weight:bold; color: blue; text-decoration: underline;'>Sign up</a>"
-                font.pixelSize: 12
-                font.family: productSansBold.name
-                color:"black"
-                horizontalAlignment: Text.AlignHCenter
-                Layout.alignment: Qt.AlignHCenter
-                onLinkActivated: {
-                    if (link === "signup") {
-
-                        console.log("Sign up link clicked")
-                    }
+        Connections {
+            target: loginHandler
+            onLoginResult: {
+                if (title === "Success") {
+                    appWin.loggedIn = true
+                } else {
+                    errorText = message
+                    errorDialog.open()
                 }
             }
         }
 
+        // link to register
+        Label {
+            textFormat: Text.RichText
+            text: qsTr("Don't have an account? <a href='register'>Sign up</a>")
+            horizontalAlignment: Text.AlignHCenter
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: appWin.authView = "register"
+            }
+        }
     }
-
-
-
-
-
-
-
-
 }

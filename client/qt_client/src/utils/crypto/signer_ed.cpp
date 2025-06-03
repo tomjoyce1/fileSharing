@@ -10,7 +10,6 @@ Signer_Ed::Signer_Ed() {
     if (sodium_init() < 0) {
         throw std::runtime_error("libsodium initialization failed");
     }
-    keygen();
 }
 
 Signer_Ed::~Signer_Ed() {
@@ -65,4 +64,15 @@ bool Signer_Ed::verify(const std::vector<uint8_t>& msg,
                signature.data(),
                msg.data(), msg.size(),
                _pk) == 0;
+}
+
+// ← NEW: load an existing Ed25519 secret key
+void Signer_Ed::loadPrivateKey(const uint8_t* rawSk, size_t len) {
+    if (len != crypto_sign_SECRETKEYBYTES) {
+        throw std::runtime_error("Signer_Ed::loadPrivateKey: wrong length");
+    }
+    memcpy(_sk, rawSk, crypto_sign_SECRETKEYBYTES);
+    // Recompute public key from secret key:
+    // libsodium lets you do:
+    crypto_sign_ed25519_sk_to_pk(_pk, _sk);
 }

@@ -11,12 +11,7 @@ Rectangle {
     width: 220
     color: white
 
-    // load your bundled Material Icons font
-    FontLoader {
-        id: materialIcons
-        source: "qrc:/resources/fonts/MaterialIcons-Regular.ttf"
-        onStatusChanged: console.log("FontLoader:", status, materialIcons.name)
-    }
+
 
     ColumnLayout {
         anchors.fill: parent
