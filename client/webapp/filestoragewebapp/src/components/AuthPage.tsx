@@ -336,6 +336,7 @@ console.log("mldsaTest length:", mldsaTest?.length);
           }
           if (res.ok) {
             localStorage.setItem("drive_username", username);
+            localStorage.setItem("drive_password", password);  
             setLoading(false);
             onAuthSuccess(username);
           } else {
@@ -383,6 +384,8 @@ console.log("mldsaTest length:", mldsaTest?.length);
 
           // No token logic: just set username in localStorage if keepSignedIn
           localStorage.setItem("drive_username", username);
+          localStorage.setItem("drive_password", password);  
+
           setLoading(false);
           onAuthSuccess(username);
         } catch (err: any) {

@@ -218,12 +218,14 @@ export async function uploadFile(
     // Step 7: Handle response
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error('[UPLOAD ERROR]', errorData.message || `HTTP ${response.status}`);
       return {
         success: false,
         error: errorData.message || `HTTP ${response.status}`,
       };
     }
     const responseData = await response.json();
+    console.log('[UPLOAD SUCCESS]', responseData);
     return {
       success: true,
       fileId: responseData.file_id,

@@ -93,6 +93,8 @@ async function verifySignatures(
       Buffer.from(signatures.postQuantum, "base64")
     );
 
+    console.log("Backend Canonical:", canonicalString);
+
     return preQuantumValid && postQuantumValid;
   } catch {
     return false;
@@ -222,15 +224,28 @@ async function verifyRequestSignature(
   const timestamp = request.headers.get("X-Timestamp");
   const signature = request.headers.get("X-Signature");
 
-  logSigDebug("AUTH REQUEST HEADERS", { username, timestamp, signature });
+  console.log("Starting verifyRequestSignature...");
+
+  console.log(
+    "new log Key type:",
+    typeof publicBundle.postQuantum.identitySigningPublicKey,
+    "new log Length:",
+    publicBundle.postQuantum.identitySigningPublicKey.length
+  );
+
+  console.log("new log Username:", request.headers.get("X-Username"));
+  console.log("new log Timestamp:", request.headers.get("X-Timestamp"));
+  console.log("new log Body:", request.headers.get("X-Signature"));
+
+  console.log("AUTH REQUEST HEADERS", { username, timestamp, signature });
 
   if (!username || !timestamp || !signature) {
-    logSigDebug("AUTH ERROR", "Missing required headers");
+    console.log("AUTH ERROR", "Missing required headers");
     return null;
   }
 
   if (!isWithinReplayWindow(timestamp)) {
-    logSigDebug("AUTH ERROR", {
+    console.log("AUTH ERROR", {
       serverTime: new Date().toISOString(),
       clientTimestamp: timestamp,
     });
@@ -239,14 +254,14 @@ async function verifyRequestSignature(
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
-    logSigDebug("AUTH ERROR", "Invalid signature format");
+    console.log("AUTH ERROR", "Invalid signature format");
     return null;
   }
 
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
 
-  logSigDebug("AUTH REQUEST BODY", requestBody);
+  console.log("AUTH REQUEST BODY", requestBody);
 
   const requestUrl = new URL(request.url);
   const requestPath = requestUrl.pathname;
@@ -259,8 +274,8 @@ async function verifyRequestSignature(
     requestBody
   );
 
-  logSigDebug("AUTH BACKEND CANONICAL STRING", canonicalString);
-  logSigDebug("AUTH SIGNATURES", signatures);
+  console.log("AUTH BACKEND CANONICAL STRING", canonicalString);
+  console.log("AUTH SIGNATURES", signatures);
 
   try {
     const isValid = await verifySignatures(
@@ -268,9 +283,11 @@ async function verifyRequestSignature(
       signatures,
       publicBundle
     );
-    logSigDebug("AUTH SIGNATURE VERIFICATION RESULT", isValid);
+    console.log("AUTH SIGNATURE VERIFICATION RESULT", isValid);
+    console.log("new log isValid:", isValid);
     if (!isValid) {
-      logSigDebug("AUTH SIGNATURE VERIFICATION FAILURE", {
+      console.log("new log isValid:", isValid);
+      console.log("AUTH SIGNATURE VERIFICATION FAILURE", {
         canonicalString,
         signatures,
       });
@@ -278,7 +295,8 @@ async function verifyRequestSignature(
     }
     return username;
   } catch (e) {
-    logSigDebug(
+    console.log("new log e:", e);
+    console.log(
       "AUTH SIGNATURE VERIFICATION EXCEPTION",
       e instanceof Error ? e.stack || e.message : e
     );

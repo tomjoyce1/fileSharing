@@ -1,19 +1,28 @@
 import { gcm } from '@noble/ciphers/aes';
 import { getKeyFromIndexedDB } from '@/lib/crypto/KeyUtils';
+import type { FileItem } from "./driveTypes";
 
 // Placeholder types for missing definitions
 type DriveItem = { id: string; type: string };
-type FileItem = { id: string; name: string };
 type FileMetadataListItem = { id: string; metadata: string };
 type FileMetadata = { id: string; decryptedMetadata: string };
 
 export function useFileActions(fetchFiles: (page: number) => Promise<void>, page: number, setError: (msg: string|null) => void, setIsLoading: (b: boolean) => void) {
-  const ensureFileItem = (item: DriveItem): FileItem => {
-    if (item.type !== "file") throw new Error("Expected file item");
-    return { id: item.id, name: "Placeholder" }; // Placeholder logic
+  const ensureFileItem = (item: any): FileItem => {
+    // Use all required fields for FileItem
+    return {
+      id: item.id,
+      name: item.name || "Unknown",
+      type: "file",
+      fileType: item.fileType || "document",
+      size: item.size || "-",
+      modified: item.modified || "-",
+      url: item.url || '',
+      encrypted: item.encrypted || false,
+    };
   };
 
-  const handleDelete = (item: DriveItem) => {
+  const handleDelete = (item: any) => {
     const fileItem = ensureFileItem(item);
     void (async () => {
       try {
@@ -29,7 +38,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
     })();
   };
 
-  const handleRename = (item: DriveItem): FileItem => {
+  const handleRename = (item: any): FileItem => {
     const fileItem = ensureFileItem(item);
     const newName = prompt("Enter new name", fileItem.name);
     if (!newName || newName === fileItem.name) return fileItem;
@@ -52,7 +61,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
   // --- New: Decrypt metadata ---
   const decryptMetadata = async (file: any) => {
     // Try to get client_data from localStorage (should be stored after upload)
-    const clientDataStr = localStorage.getItem(`client_data_${file.file_id || file.id}`);
+    const clientDataStr = localStorage.getItem(`client_data_${file.file_id}`);
     if (!clientDataStr) throw new Error('Missing decryption keys for this file.');
     const clientData = JSON.parse(clientDataStr);
     // Prompt for password if needed
@@ -75,7 +84,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
   const handleFileOpen = async (file: any) => {
     try {
       // Try to get client_data from localStorage
-      const clientDataStr = localStorage.getItem(`client_data_${file.file_id || file.id}`);
+      const clientDataStr = localStorage.getItem(`client_data_${file.file_id}`);
       if (!clientDataStr) throw new Error('Missing decryption keys for this file.');
       const clientData = JSON.parse(clientDataStr);
       // Prompt for password if needed
@@ -92,7 +101,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
       const res = await fetch(`/api/fs/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Username': username },
-        body: JSON.stringify({ file_id: file.file_id || file.id })
+        body: JSON.stringify({ file_id: file.file_id })
       });
       if (!res.ok) throw new Error('Failed to download file');
       const data = await res.json();

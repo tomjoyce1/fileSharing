@@ -121,48 +121,48 @@ function verifyFileSignatures(
 ): Result<void, APIError> {
   try {
     const dataToSign = createFileSignature(username, file_content, metadata);
-    logSigDebug("Canonical String (dataToSign)", dataToSign);
-    logSigDebug(
+    console.log("Canonical String (dataToSign)", dataToSign);
+    console.log(
       "Pre-Quantum Public Key (DER base64)",
       userPublicBundle.preQuantum.identitySigningPublicKey
         .export({ format: "der", type: "spki" })
         .toString("base64")
     );
-    logSigDebug("Pre-Quantum Signature (base64)", pre_quantum_signature);
-    logSigDebug(
+    console.log("Pre-Quantum Signature (base64)", pre_quantum_signature);
+    console.log(
       "Post-Quantum Public Key (base64)",
       Buffer.from(
         userPublicBundle.postQuantum.identitySigningPublicKey
       ).toString("base64")
     );
-    logSigDebug("Post-Quantum Signature (base64)", post_quantum_signature);
+    console.log("Post-Quantum Signature (base64)", post_quantum_signature);
     const preQuantumValid = verify(
       null,
       Buffer.from(dataToSign),
       userPublicBundle.preQuantum.identitySigningPublicKey,
       Buffer.from(pre_quantum_signature, "base64")
     );
-    logSigDebug("Pre-Quantum Verification Result", preQuantumValid);
+    console.log("Pre-Quantum Verification Result", preQuantumValid);
     const postQuantumValid = ml_dsa87.verify(
       userPublicBundle.postQuantum.identitySigningPublicKey,
       Buffer.from(dataToSign),
       Buffer.from(post_quantum_signature, "base64")
     );
-    logSigDebug("Post-Quantum Verification Result", postQuantumValid);
+    console.log("Post-Quantum Verification Result", postQuantumValid);
     if (!preQuantumValid || !postQuantumValid) {
-      logSigDebug("Signature verification failed", {
+      console.log("Signature verification failed", {
         preQuantumValid,
         postQuantumValid,
       });
       return err({ message: "Unauthorized", status: 401 });
     }
-    logSigDebug("Signature verification succeeded", {
+    console.log("Signature verification succeeded", {
       preQuantumValid,
       postQuantumValid,
     });
     return ok(undefined);
   } catch (error) {
-    logSigDebug(
+    console.log(
       "Signature Verification Exception",
       error instanceof Error ? error.stack || error.message : error
     );
@@ -192,11 +192,13 @@ async function insertFileRecord(
       .returning({ file_id: filesTable.file_id });
 
     if (!result[0]) {
+      console.log("DB INSERT FAILED: result[0] is falsy", result);
       return err({ message: "Internal Server Error", status: 500 });
     }
 
     return ok(result[0].file_id);
   } catch (error) {
+    console.log("DB INSERT FAILED: error", error);
     return err({ message: "Internal Server Error", status: 500 });
   }
 }
@@ -215,16 +217,16 @@ export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
   // Log every upload attempt
-  logSigDebug(
+  console.log(
     "UPLOAD ATTEMPT HEADERS",
     Object.fromEntries(
       req.headers.entries ? req.headers.entries() : Object.entries(req.headers)
     )
   );
-  logSigDebug("UPLOAD ATTEMPT BODY", req.body ? req.body : req.validated?.body);
+  console.log("UPLOAD ATTEMPT BODY", req.body ? req.body : req.validated?.body);
 
   if (!req.validated?.body) {
-    logSigDebug("UPLOAD ERROR", "No validated body");
+    console.log("UPLOAD ERROR", "No validated body");
     return Response.json({ message: "Internal Server Error" }, { status: 500 });
   }
 
@@ -241,7 +243,7 @@ export async function POST(
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    logSigDebug("AUTHENTICATION FAILURE", userResult.error);
+    console.log("AUTHENTICATION FAILURE", userResult.error);
     return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
@@ -249,7 +251,7 @@ export async function POST(
 
   // ensure file size is within limit
   if (file_content.length > MAX_FILE_SIZE) {
-    logSigDebug("UPLOAD ERROR", "File too large");
+    console.log("UPLOAD ERROR", "File too large");
     return Response.json({ message: "File too large" }, { status: 413 });
   }
 
@@ -257,6 +259,16 @@ export async function POST(
   const userPublicBundle = deserializeKeyBundlePublic(
     JSON.parse(user.public_key_bundle.toString())
   );
+
+  // Log public keys
+  console.log("USER PUBLIC BUNDLE", {
+    preQuantum: userPublicBundle.preQuantum.identitySigningPublicKey
+      .export({ format: "der", type: "spki" })
+      .toString("base64"),
+    postQuantum: Buffer.from(
+      userPublicBundle.postQuantum.identitySigningPublicKey
+    ).toString("base64"),
+  });
 
   const signatureResult = verifyFileSignatures(
     user.username,
@@ -269,7 +281,7 @@ export async function POST(
 
   if (signatureResult.isErr()) {
     const apiError = signatureResult.error;
-    logSigDebug("SIGNATURE VERIFICATION FAILURE", apiError);
+    console.log("SIGNATURE VERIFICATION FAILURE", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
@@ -282,12 +294,22 @@ export async function POST(
 
   if (writeResult.isErr()) {
     const apiError = writeResult.error;
-    logSigDebug("UPLOAD ERROR", apiError);
+    console.log("UPLOAD ERROR", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
   }
+
+  console.log("Inserting file record with:", {
+    user: user.user_id,
+    storage_path,
+    metadata_preview: Buffer.from(metadata, "base64")
+      .toString("utf-8")
+      .slice(0, 100),
+    pre_quantum_signature,
+    post_quantum_signature,
+  });
 
   // Insert file record into database
   const insertResult = await insertFileRecord(
@@ -303,14 +325,14 @@ export async function POST(
     cleanupFile(storage_path);
 
     const apiError = insertResult.error;
-    logSigDebug("UPLOAD ERROR", apiError);
+    console.log("UPLOAD ERROR", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
   }
 
-  logSigDebug("UPLOAD SUCCESS", { file_id: insertResult.value });
+  console.log("UPLOAD SUCCESS", { file_id: insertResult.value });
   return Response.json(
     {
       message: "File uploaded successfully",

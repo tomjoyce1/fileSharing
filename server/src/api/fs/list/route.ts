@@ -73,11 +73,15 @@ async function getAccessibleFiles(
     `;
 
     const results = await db.all(query);
+    console.log("db Results [ListLog] DB query results:", results);
+
     const hasNextPage = results.length > PAGE_SIZE;
     const files = hasNextPage ? results.slice(0, PAGE_SIZE) : results;
 
     // format response
     const fileList: FileMetadataListItem[] = files.map((row: any) => {
+      console.log("[ListLog] Mapping row:", row);
+
       const baseFile: FileMetadataListItem = {
         file_id: row.file_id,
         metadata: Buffer.from(row.metadata).toString("base64"),
@@ -113,9 +117,11 @@ async function getAccessibleFiles(
 
       return baseFile;
     });
+    console.log("[ListLog] fileList:", fileList);
 
     return ok({ files: fileList, hasNextPage });
   } catch (error) {
+    console.log("[ListLog] Error in getAccessibleFiles:", error);
     return err({ message: "Internal Server Error", status: 500 });
   }
 }

@@ -161,3 +161,46 @@ export async function generateEd25519Keypair(): Promise<{ publicKey: Uint8Array;
     privateKey: new Uint8Array(keypair.privateKey),
   };
 }
+
+/**
+ * Decrypts metadata using the provided file and client data.
+ * @param file - The file object containing encrypted metadata.
+ * @returns The decrypted metadata as a JavaScript object.
+ */
+export async function decryptMetadata(file: any): Promise<any> {
+  try {
+    // Retrieve client data from localStorage
+    const clientDataStr = localStorage.getItem(`client_data_${file.file_id || file.id}`);
+    if (!clientDataStr) {
+      throw new KeyError('Missing decryption keys for this file.');
+    }
+
+    const clientData = JSON.parse(clientDataStr);
+
+    // Load MEK and metadata nonce from client data
+    const mek = new Uint8Array(clientData.mek);
+    const metadataNonce = new Uint8Array(clientData.metadataNonce);
+
+    // Decode the encrypted metadata
+    const encryptedMetadata =
+      typeof file.metadata === 'string'
+        ? Uint8Array.from(atob(file.metadata), (c) => c.charCodeAt(0))
+        : file.metadata;
+
+    // Decrypt the metadata using AES-GCM
+    await sodium.ready;
+    const decrypted = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+      null, // No additional data
+      encryptedMetadata,
+      null, // No additional data
+      metadataNonce,
+      mek
+    );
+
+    // Parse and return the decrypted metadata
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch (err) {
+    console.error('[KeyUtils] decryptMetadata: Failed to decrypt metadata', err);
+    throw new KeyError('Failed to decrypt metadata', err as Error);
+  }
+}

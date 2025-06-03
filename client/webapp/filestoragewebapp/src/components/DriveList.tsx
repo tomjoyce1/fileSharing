@@ -15,6 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useDriveFiles } from "@/app/drive/useDriveFiles";
+import { useEffect, useState } from "react";
 
 export interface FileItem {
   id: string;
@@ -35,7 +37,11 @@ type Props = {
   onDelete: (item: DriveItem) => void;
   onRename: (item: DriveItem) => DriveItem;
   onFileOpen: (file: FileItem) => Promise<void>;
+  setPage: (page: number) => void;
+  page: number;
+  hasNextPage: boolean;
 };
+
 
 const handleShare = (item: DriveItem) => {
   alert(`Share "${item.name}" with username X.`);
@@ -48,7 +54,20 @@ export default function DriveList({
   onDelete,
   onRename,
   onFileOpen,
-}: Props) {
+  page,
+  setPage,
+  hasNextPage,
+}: Props)
+ {
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (error) {
+      alert(error);
+    }
+  }, [error]);
+
   const handleDelete = (item: DriveItem) => {
     if (window.confirm(`Delete "${item.name}"?`)) {
       onDelete(item);
@@ -60,27 +79,7 @@ export default function DriveList({
   };
 
   const handleDownload = async (item: FileItem) => {
-    if (!item.url) {
-      alert("File URL not available");
-      return;
-    }
-    
-    try {
-      const response = await fetch(item.url);
-      if (!response.ok) throw new Error("Network response was not ok");
-      const blob = await response.blob();
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = item.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      alert("Failed to download file: " + (error as Error).message);
-    }
+    await onFileOpen(item);
   };
 
   return (
@@ -96,9 +95,7 @@ export default function DriveList({
       {/* Items */}
       <div className="divide-y divide-gray-700">
         {items.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            This folder is empty
-          </div>
+          <div className="p-8 text-center text-gray-500">This folder is empty</div>
         ) : (
           items.map((item) => (
             <div
@@ -183,6 +180,24 @@ export default function DriveList({
             </div>
           ))
         )}
+      </div>
+
+      {/* Pagination */}
+      <div className="flex justify-between p-4">
+        <button
+          disabled={page === 1 || isLoading}
+          onClick={() => setPage(page - 1)}
+          className="text-blue-400 disabled:text-gray-500"
+        >
+          Previous
+        </button>
+        <button
+          disabled={!hasNextPage || isLoading}
+          onClick={() => setPage(page + 1)}
+          className="text-blue-400 disabled:text-gray-500"
+        >
+          Next
+        </button>
       </div>
     </div>
   );

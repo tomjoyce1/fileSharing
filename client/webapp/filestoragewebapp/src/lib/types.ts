@@ -6,11 +6,21 @@ export interface FileMetadata {
 }
 
 export interface FileMetadataListItem {
-  id: string;
-  metadata: string | Uint8Array;
-  owner_user_id: string;
-  created_at: string;
-  updated_at: string;
+  file_id: number;
+  metadata: string; // base64 encoded encrypted metadata for transport
+  pre_quantum_signature: string;
+  post_quantum_signature: string;
+  is_owner: boolean;
+  upload_timestamp?: number;
+  shared_access?: {
+    encrypted_fek: string;
+    encrypted_fek_nonce: string;
+    encrypted_mek: string;
+    encrypted_mek_nonce: string;
+    ephemeral_public_key: string;
+    file_content_nonce: string;
+    metadata_nonce: string;
+  };
 }
 
 // Response types

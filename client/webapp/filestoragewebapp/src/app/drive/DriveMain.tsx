@@ -20,41 +20,63 @@ export default function DriveMain() {
 
   const { files, hasNextPage } = useDriveFiles(page, setError, setIsLoading);
 
-  const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(files, page, setError, setIsLoading);
-
-  // Key validation on mount
-  useKeyValidation(page, setError, files);
+  // Dont use dummy async function for fetchFiles in useFileActions and useKeyValidation
+  const dummyAsync = async (_page: number) => {};
+  const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(dummyAsync, page, setError, setIsLoading);
+  useKeyValidation(page, setError, dummyAsync);
 
   // Processed files for display
   const [processedFiles, setProcessedFiles] = useState<FileItem[]>([]);
   React.useEffect(() => {
     const processFiles = async () => {
+      if (!files || files.length === 0) {
+        setProcessedFiles([]);
+        return;
+      }
       const processed = await Promise.all(
         files.map(async (file) => {
-          const metadata = await decryptMetadata(file);
-          let fileType: FileItem["fileType"] = 'document';
-          if (metadata.file_type.startsWith('image')) fileType = 'image';
-          else if (metadata.file_type.startsWith('audio')) fileType = 'audio';
-          else if (metadata.file_type.startsWith('video')) fileType = 'video';
-          else if (metadata.file_type === 'application/pdf') fileType = 'pdf';
-          return {
-            id: file.id?.toString() ?? file.file_id?.toString() ?? '',
-            name: metadata.original_filename,
-            type: 'file' as const,
-            fileType,
-            size: `${(metadata.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`,
-            modified: file.upload_timestamp
-              ? new Date(file.upload_timestamp * 1000).toLocaleDateString()
-              : '-',
-            url: `/api/fs/download/${file.id ?? file.file_id}`,
-            encrypted: true
-          };
+          try {
+            const metadata = await decryptMetadata(file);
+            console.log("Decrypted metadata:", metadata);
+
+
+            let fileType: FileItem["fileType"] = 'document';
+            if (metadata.file_type?.startsWith('image')) fileType = 'image';
+            else if (metadata.file_type?.startsWith('audio')) fileType = 'audio';
+            else if (metadata.file_type?.startsWith('video')) fileType = 'video';
+            else if (metadata.file_type === 'application/pdf') fileType = 'pdf';
+            return {
+              id: file.file_id?.toString() ?? '',
+              name: metadata.original_filename,
+              type: 'file' as const,
+              fileType,
+              size: metadata.file_size_bytes ? `${(metadata.file_size_bytes / (1024 * 1024)).toFixed(1)} MB` : '-',
+              modified: file.upload_timestamp
+                ? new Date(file.upload_timestamp * 1000).toLocaleDateString()
+                : '-',
+              url: `/api/fs/download/${file.file_id}`,
+              encrypted: true
+            };
+          } catch (e) {
+            // If decryption fails, skip file
+               console.warn("Failed to decrypt metadata for file:", file, e);
+       
+
+            
+            return null;
+          }
         })
       );
-      setProcessedFiles(processed);
+      setProcessedFiles(processed.filter(Boolean) as FileItem[]);
     };
     void processFiles();
   }, [files]);
+
+  React.useEffect(() => {
+    if (error && error.includes('Not logged in')) {
+      alert(error);
+    }
+  }, [error]);
 
   const filteredItems = processedFiles.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -113,7 +135,7 @@ export default function DriveMain() {
       );
       if (!result.success) throw new Error(result.error || "Upload failed");
       // Refresh file list
-      setPage(p => p + 1);
+      setPage(1);
     } catch (err) {
       setUploadError((err as Error).message);
     } finally {
@@ -166,14 +188,12 @@ export default function DriveMain() {
             onFolderClick={() => {}}
             getFileIcon={getFileIcon}
             onDelete={handleDelete}
-            onRename={handleRename}
+            onRename={(item) => handleRename(item)}
             onFileOpen={handleFileOpen}
+            setPage={setPage}
+            page={page}
+            hasNextPage={hasNextPage}
           />
-          {hasNextPage && (
-            <div className="text-center mt-4">
-              <Button onClick={() => setPage(p => p + 1)} variant="outline">Load More</Button>
-            </div>
-          )}
         </div>
       </main>
     </div>
