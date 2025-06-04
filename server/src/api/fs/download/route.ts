@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
-import { filesTable, sharedAccessTable } from "~/db/schema";
+import { filesTable, sharedAccessTable, usersTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
@@ -35,8 +35,10 @@ async function getFileAccess(
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
+        owner_username: usersTable.username,
       })
       .from(filesTable)
+      .innerJoin(usersTable, eq(usersTable.user_id, filesTable.owner_user_id))
       .where(
         and(
           eq(filesTable.file_id, file_id),
@@ -47,10 +49,12 @@ async function getFileAccess(
       .then((rows) => rows[0]);
 
     if (ownedFile) {
-      return ok({
-        ...ownedFile,
-        is_owner: true,
-      });
+      return Promise.resolve(
+        ok({
+          ...ownedFile,
+          is_owner: true,
+        })
+      );
     }
 
     // user has shared access?
@@ -62,6 +66,7 @@ async function getFileAccess(
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
+        owner_username: usersTable.username,
         encrypted_fek: sharedAccessTable.encrypted_fek,
         encrypted_fek_nonce: sharedAccessTable.encrypted_fek_nonce,
         encrypted_mek: sharedAccessTable.encrypted_mek,
@@ -78,37 +83,44 @@ async function getFileAccess(
           eq(sharedAccessTable.shared_with_user_id, user_id)
         )
       )
+      .innerJoin(usersTable, eq(usersTable.user_id, filesTable.owner_user_id))
       .where(eq(filesTable.file_id, file_id))
       .limit(1)
       .then((rows) => rows[0]);
 
     if (sharedFile) {
-      return ok({
-        file_id: sharedFile.file_id,
-        storage_path: sharedFile.storage_path,
-        metadata: sharedFile.metadata,
-        pre_quantum_signature: sharedFile.pre_quantum_signature,
-        post_quantum_signature: sharedFile.post_quantum_signature,
-        owner_user_id: sharedFile.owner_user_id,
-        is_owner: false,
-        shared_access: {
-          encrypted_fek: sharedFile.encrypted_fek.toString("base64"),
-          encrypted_fek_nonce:
-            sharedFile.encrypted_fek_nonce.toString("base64"),
-          encrypted_mek: sharedFile.encrypted_mek.toString("base64"),
-          encrypted_mek_nonce:
-            sharedFile.encrypted_mek_nonce.toString("base64"),
-          ephemeral_public_key:
-            sharedFile.ephemeral_public_key.toString("base64"),
-          file_content_nonce: sharedFile.file_content_nonce.toString("base64"),
-          metadata_nonce: sharedFile.metadata_nonce.toString("base64"),
-        },
-      });
+      return Promise.resolve(
+        ok({
+          file_id: sharedFile.file_id,
+          storage_path: sharedFile.storage_path,
+          metadata: sharedFile.metadata,
+          pre_quantum_signature: sharedFile.pre_quantum_signature,
+          post_quantum_signature: sharedFile.post_quantum_signature,
+          owner_user_id: sharedFile.owner_user_id,
+          owner_username: sharedFile.owner_username,
+          is_owner: false,
+          shared_access: {
+            encrypted_fek: sharedFile.encrypted_fek.toString("base64"),
+            encrypted_fek_nonce:
+              sharedFile.encrypted_fek_nonce.toString("base64"),
+            encrypted_mek: sharedFile.encrypted_mek.toString("base64"),
+            encrypted_mek_nonce:
+              sharedFile.encrypted_mek_nonce.toString("base64"),
+            ephemeral_public_key:
+              sharedFile.ephemeral_public_key.toString("base64"),
+            file_content_nonce:
+              sharedFile.file_content_nonce.toString("base64"),
+            metadata_nonce: sharedFile.metadata_nonce.toString("base64"),
+          },
+        })
+      );
     }
 
-    return err({ message: "File not found", status: 404 });
+    return Promise.resolve(err({ message: "File not found", status: 404 }));
   } catch (error) {
-    return err({ message: "Internal Server Error", status: 500 });
+    return Promise.resolve(
+      err({ message: "Internal Server Error", status: 500 })
+    );
   }
 }
 
@@ -124,16 +136,6 @@ function readFileContent(storage_path: string): Result<string, APIError> {
     return ok(base64Content);
   } catch (error) {
     return err({ message: "Internal Server Error", status: 500 });
-  }
-}
-
-function logErrorDetails(context: string, error: unknown) {
-  console.error(`[Error] Context: ${context}`);
-  if (error instanceof Error) {
-    console.error(`[Error Details] Message: ${error.message}`);
-    console.error(`[Error Details] Stack: ${error.stack}`);
-  } else {
-    console.error(`[Error Details]`, error);
   }
 }
 
@@ -173,7 +175,6 @@ export async function POST(
   const fileContentResult = readFileContent(file.storage_path);
   if (fileContentResult.isErr()) {
     const apiError = fileContentResult.error;
-    logErrorDetails("Read File Content", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
@@ -181,40 +182,20 @@ export async function POST(
   }
 
   const fileContent = fileContentResult.value;
-
-  // Add debug logging for signature verification troubleshooting
-  // You may need to reconstruct the canonical string here if possible, or log what is sent to the client
-  const preQuantumDER = file.pre_quantum_signature
-    ? file.pre_quantum_signature.toString("base64")
-    : "";
-  const postQuantumDER = file.post_quantum_signature
-    ? file.post_quantum_signature.toString("base64")
-    : "";
-  // If you have access to the public key bundle here, log it as well (DER and raw)
-  console.log("[Debug][Download] file_id:", file_id);
-  console.log(
-    "[Debug][Download] metadata (base64):",
-    Buffer.isBuffer(file.metadata)
-      ? file.metadata.toString("base64")
-      : file.metadata
-  );
-  console.log(
-    "[Debug][Download] pre_quantum_signature (base64):",
-    preQuantumDER
-  );
-  console.log(
-    "[Debug][Download] post_quantum_signature (base64):",
-    postQuantumDER
-  );
-  // If you can, log the canonical string used for signing (if available)
-
   return Response.json(
     {
       file_content: fileContent,
-      metadata: file.metadata,
-      pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
-      post_quantum_signature: file.post_quantum_signature.toString("base64"),
-      owner_user_id: file.owner_user_id,
+      metadata:
+        typeof file.metadata === "string"
+          ? file.metadata
+          : Buffer.from(file.metadata).toString("base64"),
+      pre_quantum_signature: Buffer.from(file.pre_quantum_signature).toString(
+        "base64"
+      ),
+      post_quantum_signature: Buffer.from(file.post_quantum_signature).toString(
+        "base64"
+      ),
+      owner_username: file.owner_username,
       is_owner: file.is_owner,
       ...(file.shared_access && { shared_access: file.shared_access }),
     },

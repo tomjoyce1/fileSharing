@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
-import { filesTable, sharedAccessTable } from "~/db/schema";
+import { filesTable, sharedAccessTable, usersTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import type { FileMetadataListItem, APIError } from "~/utils/schema";
 import { ok, err, Result } from "neverthrow";
@@ -43,8 +43,10 @@ async function getAccessibleFiles(
         NULL as encrypted_mek_nonce,
         NULL as ephemeral_public_key,
         NULL as file_content_nonce,
-        NULL as metadata_nonce
+        NULL as metadata_nonce,
+        u.username as owner_username
       FROM ${filesTable} f
+      INNER JOIN ${usersTable} u ON f.owner_user_id = u.user_id
       WHERE f.owner_user_id = ${user_id}
 
       UNION ALL
@@ -62,9 +64,11 @@ async function getAccessibleFiles(
         sa.encrypted_mek_nonce,
         sa.ephemeral_public_key,
         sa.file_content_nonce,
-        sa.metadata_nonce
+        sa.metadata_nonce,
+        u.username as owner_username
       FROM ${sharedAccessTable} sa
       INNER JOIN ${filesTable} f ON sa.file_id = f.file_id
+      INNER JOIN ${usersTable} u ON f.owner_user_id = u.user_id
       WHERE sa.shared_with_user_id = ${user_id}
 
       ORDER BY file_id DESC
@@ -92,6 +96,7 @@ async function getAccessibleFiles(
           row.post_quantum_signature
         ).toString("base64"),
         is_owner: Boolean(row.is_owner),
+        owner_username: row.owner_username,
       };
 
       // Add shared access data if this is a shared file

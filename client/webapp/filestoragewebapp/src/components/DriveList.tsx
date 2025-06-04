@@ -53,20 +53,34 @@ type Props = {
 
 async function handleShare(item: DriveItem, recipientUsername: string) {
   if (!recipientUsername || !recipientUsername.trim()) {
+    console.log('Share attempt with empty username');
     alert('No username entered for sharing.');
     return;
   }
   try {
+    console.log('Starting file share process', { fileId: item.id, recipientUsername });
+    
     // 1. Get client_data for this file (contains fek, mek, nonces)
     const clientData = await getObjectFromIndexedDB(item.id.toString());
-    if (!clientData) throw new Error('Missing decryption keys for this file.');
+    if (!clientData) {
+      console.log('Missing decryption keys for file', { fileId: item.id });
+      throw new Error('Missing decryption keys for this file.');
+    }
+    console.log('Retrieved client data', { fileId: item.id });
 
     // 2. Get current user's username and private key bundle
     const username = localStorage.getItem('drive_username') || '';
+    console.log('Retrieved current username', { username });
+    
     // Decrypt private keys using KEK
     const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
     const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
-    if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
+    if (!ed25519Priv || !mldsaPriv) {
+      console.log('Failed to load private keys', { username });
+      throw new Error('Could not load your private keys. Please log in again.');
+    }
+    console.log('Successfully loaded private keys');
+    
     const privateKeyBundle = {
       preQuantum: {
         identitySigning: { privateKey: ed25519Priv },
@@ -77,6 +91,7 @@ async function handleShare(item: DriveItem, recipientUsername: string) {
     };
 
     // 3. Sign the getbundle request
+    console.log('Requesting recipient public key bundle', { recipientUsername });
     const { headers, body } = createAuthenticatedRequest(
       'POST',
       '/api/keyhandler/getbundle',
@@ -89,25 +104,34 @@ async function handleShare(item: DriveItem, recipientUsername: string) {
       headers,
       body
     });
-    if (!keyResponse.ok) throw new Error('Failed to fetch recipient public key');
+    if (!keyResponse.ok) {
+      console.log('Failed to fetch recipient public key', { recipientUsername, status: keyResponse.status });
+      throw new Error('Failed to fetch recipient public key');
+    }
     const keyData = await keyResponse.json();
+    console.log('Received recipient public key bundle');
+    
     const recipientPublicBundle = deserializeKeyBundlePublic(keyData.key_bundle);
     const recipientRawKem = extractX25519RawPublicKeyFromDER(recipientPublicBundle.preQuantum.identityKemPublicKey);
 
     // 4. Generate ephemeral key pair (libsodium)
+    console.log('Generating ephemeral key pair');
     await sodium.ready;
     const ephKeyPair = sodium.crypto_kx_keypair();
 
     // 5. Derive shared secret
+    console.log('Deriving shared secret');
     const sharedSecret = sodium.crypto_scalarmult(ephKeyPair.privateKey, recipientRawKem);
 
     // 6. Encrypt FEK and MEK with shared secret
+    console.log('Encrypting file keys with shared secret');
     const fekNonce = randomBytes(16);
     const mekNonce = randomBytes(16);
     const encryptedFek = encryptWithSharedSecret(new Uint8Array(clientData.fek), sharedSecret, fekNonce);
     const encryptedMek = encryptWithSharedSecret(new Uint8Array(clientData.mek), sharedSecret, mekNonce);
 
-    // 7. Prepare share body (all binary fields as base64)
+    // 7. Prepare share body
+    console.log('Preparing share request body');
     const shareBody = {
       file_id: Number(item.id),
       shared_with_username: recipientUsername,
@@ -120,7 +144,8 @@ async function handleShare(item: DriveItem, recipientUsername: string) {
       metadata_nonce: Buffer.from(clientData.metadataNonce).toString('base64')
     };
 
-    // 8. Call share API using documented API, but authenticated
+    // 8. Call share API
+    console.log('Sending share request to server', { fileId: item.id, recipientUsername });
     const { headers: shareHeaders, body: shareBodyString } = createAuthenticatedRequest(
       'POST',
       '/api/fs/share',
@@ -135,18 +160,34 @@ async function handleShare(item: DriveItem, recipientUsername: string) {
     });
     if (!shareRes.ok) {
       const errText = await shareRes.text();
+      console.log('Share request failed', { 
+        fileId: item.id, 
+        recipientUsername, 
+        status: shareRes.status,
+        error: errText 
+      });
       throw new Error('Failed to share file: ' + errText);
     }
+    
+    console.log('File shared successfully', { fileId: item.id, recipientUsername });
     alert(`File shared with ${recipientUsername}!`);
   } catch (err) {
+    console.log('Share operation failed', { 
+      fileId: item.id, 
+      recipientUsername,
+      error: err instanceof Error ? err.message : String(err)
+    });
     alert('Share failed: ' + (err instanceof Error ? err.message : String(err)));
   }
 }
 
 const handleSharePrompt = (item: DriveItem) => {
+  console.log('Share prompt initiated', { fileId: item.id });
   const recipient = window.prompt('Enter the username to share with:');
   if (recipient && recipient.trim()) {
     handleShare(item, recipient.trim());
+  } else {
+    console.log('Share prompt cancelled or empty username provided');
   }
 };
 
@@ -234,14 +275,27 @@ export default function DriveList({
   };
 
   const handleRevokeAccess = async (item: DriveItem) => {
+    console.log('Revoke access initiated', { fileId: item.id });
     const usernameToRevoke = window.prompt('Enter the username to revoke access for:');
-    if (!usernameToRevoke || !usernameToRevoke.trim()) return;
+    if (!usernameToRevoke || !usernameToRevoke.trim()) {
+      console.log('Revoke access cancelled or empty username provided');
+      return;
+    }
     try {
       const username = localStorage.getItem('drive_username') || '';
+      console.log('Processing revoke access request', { 
+        fileId: item.id, 
+        usernameToRevoke: usernameToRevoke.trim() 
+      });
+      
       // Decrypt private keys using KEK
       const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
       const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
-      if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
+      if (!ed25519Priv || !mldsaPriv) {
+        console.log('Failed to load private keys for revoke operation', { username });
+        throw new Error('Could not load your private keys. Please log in again.');
+      }
+      
       const privateKeyBundle = {
         preQuantum: {
           identitySigning: { privateKey: ed25519Priv },
@@ -250,6 +304,7 @@ export default function DriveList({
           identitySigning: { privateKey: mldsaPriv },
         },
       };
+      
       const body = { file_id: Number(item.id), username: usernameToRevoke.trim() };
       const { headers, body: bodyString } = createAuthenticatedRequest(
         'POST',
@@ -258,19 +313,37 @@ export default function DriveList({
         username,
         privateKeyBundle
       );
+      
+      console.log('Sending revoke request to server');
       const res = await fetch('/api/fs/revoke', {
         method: 'POST',
         headers,
         body: bodyString
       });
+      
       if (!res.ok) {
         const errText = await res.text();
+        console.log('Revoke access request failed', { 
+          fileId: item.id, 
+          usernameToRevoke: usernameToRevoke.trim(),
+          status: res.status,
+          error: errText 
+        });
         setError('Failed to revoke access: ' + errText);
         return;
       }
+      
+      console.log('Access revoked successfully', { 
+        fileId: item.id, 
+        usernameToRevoke: usernameToRevoke.trim() 
+      });
       alert('Access revoked for user: ' + usernameToRevoke.trim());
-      // Optionally refresh file list here if needed
     } catch (err) {
+      console.log('Revoke access operation failed', { 
+        fileId: item.id, 
+        usernameToRevoke: usernameToRevoke.trim(),
+        error: err instanceof Error ? err.message : String(err)
+      });
       setError('Failed to revoke access: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
