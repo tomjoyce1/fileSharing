@@ -9,6 +9,7 @@ import { ml_dsa87 } from '@noble/post-quantum/ml-dsa';
 import { createAuthenticatedRequest } from './utils/encryption';
 import { extractEd25519RawPublicKeyFromDER } from '@/lib/crypto/KeyHelper';
 import { createFileSignatureCanonical } from './utils/encryption';
+import { getDecryptedPrivateKey } from '@/components/AuthPage';
 
 // Placeholder types for missing definitions
 type DriveItem = { id: string; type: string };
@@ -113,8 +114,8 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
         if (!password) throw new Error('Password required to unlock keys');
       }
       // Load private keys for signing
-      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
       if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
       const privateKeyBundle = {
         preQuantum: {

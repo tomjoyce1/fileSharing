@@ -9,6 +9,7 @@ import type { FileItem, DriveItem } from "./driveTypes";
 import { uploadFile } from "./utils/encryption";
 import { getKeyFromIndexedDB, saveKeyToIndexedDB, getObjectFromIndexedDB, saveObjectToIndexedDB } from "@/lib/crypto/KeyUtils";
 import { ctr } from '@noble/ciphers/aes';
+import { getDecryptedPrivateKey, clearKEK } from '@/components/AuthPage';
 
 export default function DriveMain() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,16 +137,10 @@ export default function DriveMain() {
       // Get user info
       const username = localStorage.getItem("drive_username") || "";
       if (!username) throw new Error("Not logged in");
-      // Prompt for password if not in memory
-      let password = localStorage.getItem("drive_password") || "";
-      if (!password) {
-        password = window.prompt("Enter your password to unlock your keys:") || "";
-        if (!password) throw new Error("Password required to unlock keys");
-      }
-      // Get private keys from IndexedDB
-      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
-      const x25519Priv = await getKeyFromIndexedDB(`${username}_x25519_priv`, password);
+      // Decrypt private keys using KEK
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
+      const x25519Priv = await getDecryptedPrivateKey(username, 'x25519');
       if (!ed25519Priv || !mldsaPriv || !x25519Priv) throw new Error("Could not load your private keys. Please log in again.");
       // Compose privateKeyBundle for uploadFile
       const privateKeyBundle = {
@@ -200,6 +195,12 @@ export default function DriveMain() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("drive_username");
+    clearKEK();
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
       {isLoading && (
@@ -217,7 +218,7 @@ export default function DriveMain() {
             </div>
           </div>
           <Button onClick={handleUpload} className="bg-blue-600 hover:bg-blue-700">Upload</Button>
-          <button onClick={() => { localStorage.removeItem("drive_username"); localStorage.removeItem("drive_password"); window.location.reload(); }} className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white">Logout</button>
+          <button onClick={handleLogout} className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white">Logout</button>
           <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileInputChange} />
         </div>
       </header>
@@ -239,6 +240,7 @@ export default function DriveMain() {
             setPage={setPage}
             page={page}
             hasNextPage={hasNextPage}
+            onShare={() => {}}
           />
         </div>
       </main>

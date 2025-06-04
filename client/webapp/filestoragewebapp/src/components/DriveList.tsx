@@ -24,6 +24,7 @@ import { encryptWithSharedSecret } from '@/app/drive/utils/encryption';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 import { deserializeKeyBundlePublic } from '@/lib/crypto/KeyHelper';
 import { createAuthenticatedRequest } from '@/app/drive/utils/encryption';
+import { getDecryptedPrivateKey } from '@/components/AuthPage';
 
 export interface FileItem {
   id: string;
@@ -62,13 +63,9 @@ async function handleShare(item: DriveItem, recipientUsername: string) {
 
     // 2. Get current user's username and private key bundle
     const username = localStorage.getItem('drive_username') || '';
-    let password = localStorage.getItem('drive_password') || '';
-    if (!password) {
-      password = window.prompt('Enter your password to unlock your keys:') || '';
-      if (!password) throw new Error('Password required to unlock keys');
-    }
-    const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-    const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+    // Decrypt private keys using KEK
+    const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+    const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
     if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
     const privateKeyBundle = {
       preQuantum: {
@@ -180,14 +177,9 @@ export default function DriveList({
     try {
       // Authenticated request to /api/fs/delete
       const username = localStorage.getItem('drive_username') || '';
-      let password = localStorage.getItem('drive_password') || '';
-      if (!password) {
-        password = window.prompt('Enter your password to unlock your keys:') || '';
-        if (!password) throw new Error('Password required to unlock keys');
-      }
-      // Load private keys for signing
-      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+      // Decrypt private keys using KEK
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
       if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
       const privateKeyBundle = {
         preQuantum: {
@@ -235,14 +227,9 @@ export default function DriveList({
     if (!usernameToRevoke || !usernameToRevoke.trim()) return;
     try {
       const username = localStorage.getItem('drive_username') || '';
-      let password = localStorage.getItem('drive_password') || '';
-      if (!password) {
-        password = window.prompt('Enter your password to unlock your keys:') || '';
-        if (!password) throw new Error('Password required to unlock keys');
-      }
-      // Load private keys for signing
-      const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-      const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+      // Decrypt private keys using KEK
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
       if (!ed25519Priv || !mldsaPriv) throw new Error('Could not load your private keys. Please log in again.');
       const privateKeyBundle = {
         preQuantum: {

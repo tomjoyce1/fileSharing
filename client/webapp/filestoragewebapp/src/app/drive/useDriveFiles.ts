@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { FileMetadataListItem } from "@/lib/types";
 import { createAuthenticatedRequest } from "./utils/encryption";
-import { getKeyFromIndexedDB } from "@/lib/crypto/KeyUtils";
+import { getDecryptedPrivateKey } from '@/components/AuthPage';
 
 export function useDriveFiles(page: number, setError: (msg: string | null) => void, setIsLoading: (b: boolean) => void) {
   const [files, setFiles] = useState<FileMetadataListItem[]>([]);
@@ -21,8 +21,8 @@ export function useDriveFiles(page: number, setError: (msg: string | null) => vo
       setError(null);
       try {
         // Load private keys for signing
-        const ed25519Priv = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
-        const mldsaPriv = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
+        const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519', password);
+        const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa', password);
         if (!ed25519Priv || !mldsaPriv) {
           setError("Could not load your private keys. Please log in again.");
           setFiles([]);

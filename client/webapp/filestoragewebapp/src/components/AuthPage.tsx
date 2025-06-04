@@ -7,6 +7,8 @@ import { ml_kem1024 } from "@noble/post-quantum/ml-kem";
 import sodium from "libsodium-wrappers";
 import { saveObjectToIndexedDB, getObjectFromIndexedDB } from "@/lib/crypto/KeyUtils";
 import { serializeKeyBundlePublic, deserializeKeyBundlePublic } from "@/lib/crypto/KeyHelper";
+import scrypt from 'scrypt-js';
+import { ctr } from '@noble/ciphers/aes';
 
 // Types for key pairs
 type KeyPair = {
@@ -214,7 +216,45 @@ async function generateEd25519Keypair(): Promise<KeyPair> {
     privateKey: new Uint8Array(keypair.privateKey),
   };
 }
- 
+
+const KDF_PARAMS = { N: 2 ** 15, r: 8, p: 1, dkLen: 32 };
+let inMemoryKEK: Uint8Array | null = null;
+export function setKEK(kek: Uint8Array) { inMemoryKEK = kek; }
+export function getKEK(): Uint8Array | null { return inMemoryKEK; }
+export function clearKEK() { inMemoryKEK = null; }
+
+export async function deriveKEK(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  const pwBytes = new TextEncoder().encode(password);
+  return new Uint8Array(await scrypt.scrypt(pwBytes, salt, KDF_PARAMS.N, KDF_PARAMS.r, KDF_PARAMS.p, KDF_PARAMS.dkLen));
+}
+
+export function encryptWithKEK(plain: Uint8Array, kek: Uint8Array): { ciphertext: Uint8Array, nonce: Uint8Array } {
+  const nonce = crypto.getRandomValues(new Uint8Array(16));
+  const cipher = ctr(kek, nonce);
+  return { ciphertext: cipher.encrypt(plain), nonce };
+}
+
+export function decryptWithKEK(ciphertext: Uint8Array, nonce: Uint8Array, kek: Uint8Array): Uint8Array {
+  const cipher = ctr(kek, nonce);
+  return cipher.decrypt(ciphertext);
+}
+
+export async function getDecryptedPrivateKey(username: string, keyType: 'ed25519' | 'x25519' | 'mldsa', password?: string): Promise<Uint8Array> {
+  if (!inMemoryKEK) {
+    const saltArr = await getObjectFromIndexedDB(`${username}_kdf_salt`);
+    if (!saltArr) throw new Error('Missing KDF salt');
+    const salt = new Uint8Array(saltArr);
+    if (!password) {
+      password = window.prompt('Enter your password to unlock your keys:') || '';
+      if (!password) throw new Error('Password required');
+    }
+    inMemoryKEK = await deriveKEK(password, salt);
+  }
+  const obj = await getObjectFromIndexedDB(`${username}_${keyType}_priv`);
+  if (!obj) throw new Error('Missing encrypted key');
+  return decryptWithKEK(new Uint8Array(obj.ciphertext), new Uint8Array(obj.nonce), inMemoryKEK);
+}
+
 export default function AuthPage({
   onAuthSuccess,
 }: {
@@ -259,24 +299,22 @@ export default function AuthPage({
             throw new Error(`Invalid ML-DSA public key length: got ${mldsaKeypair.publicKey.length}, expected 2592`);
           }
 
-          // Save raw private keys to IndexedDB
-          await saveKeyToIndexedDB(
-            `${username}_ed25519_priv`,
-            ed25519Keypair.privateKey,
-          );
-          await saveKeyToIndexedDB(
-            `${username}_x25519_priv`,
-            x25519Keypair.privateKey,
-          );
-          await saveKeyToIndexedDB(
-            `${username}_mldsa_priv`,
-            mldsaKeypair.privateKey,
-          );
+          // Registration: store encrypted keys
+          const salt = crypto.getRandomValues(new Uint8Array(16));
+          const kek = await deriveKEK(password, salt);
+          const edEnc = encryptWithKEK(ed25519Keypair.privateKey, kek);
+          const xEnc = encryptWithKEK(x25519Keypair.privateKey, kek);
+          const mldsaEnc = encryptWithKEK(mldsaKeypair.privateKey, kek);
+          await saveObjectToIndexedDB(`${username}_ed25519_priv`, { ciphertext: Array.from(edEnc.ciphertext), nonce: Array.from(edEnc.nonce) });
+          await saveObjectToIndexedDB(`${username}_x25519_priv`, { ciphertext: Array.from(xEnc.ciphertext), nonce: Array.from(xEnc.nonce) });
+          await saveObjectToIndexedDB(`${username}_mldsa_priv`, { ciphertext: Array.from(mldsaEnc.ciphertext), nonce: Array.from(mldsaEnc.nonce) });
+          await saveObjectToIndexedDB(`${username}_kdf_salt`, Array.from(salt));
+          setKEK(kek);
           
-          // Verify stored keys
-          const mldsaVerify = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
-          if (!mldsaVerify || mldsaVerify.length !== 4896) {
-            throw new Error(`ML-DSA key verification failed: stored length ${mldsaVerify?.length}`);
+          // Verify stored keys by decrypting and checking length
+          const mldsaDecrypted = await getDecryptedPrivateKey(username, 'mldsa', password);
+          if (!mldsaDecrypted || mldsaDecrypted.length !== 4896) {
+            throw new Error(`ML-DSA key verification failed: decrypted length ${mldsaDecrypted?.length}`);
           }
 
           // Try to read back the keys immediately for debug
@@ -372,26 +410,39 @@ console.log("mldsaTest length:", mldsaTest?.length);
         try {
           console.log(`[Login] Attempting to retrieve keys for user: ${username}`);
           // Get raw keys from IndexedDB
-          const edRaw = await getKeyFromIndexedDB(`${username}_ed25519_priv`);
-          const x25519Raw = await getKeyFromIndexedDB(
-            `${username}_x25519_priv`,
-          );
-          const mldsaRaw = await getKeyFromIndexedDB(`${username}_mldsa_priv`);
-          console.log("[Login] Retrieved from IndexedDB:", {
-            ed: edRaw,
-            x25519: x25519Raw,
-            mldsa: mldsaRaw
-          });
-          console.log("[Login] Retrieved mldsaRaw:", mldsaRaw);
-          console.log("[Login] Type:", typeof mldsaRaw);
-          console.log("[Login] Is Uint8Array:", mldsaRaw instanceof Uint8Array);
-          console.log("[Login] Length:", mldsaRaw?.length);
+          
 
-          if (!edRaw || !x25519Raw || !mldsaRaw) {
-            setError("No keys found for this user. Please register first.");
-            setLoading(false);
-            return;
-          }
+
+          const edObj = await getObjectFromIndexedDB(`${username}_ed25519_priv`);
+const x25519Obj = await getObjectFromIndexedDB(`${username}_x25519_priv`);
+const mldsaObj = await getObjectFromIndexedDB(`${username}_mldsa_priv`);
+console.log("[Login] Retrieved encrypted keys from IndexedDB:", {
+  ed: edObj,
+  x25519: x25519Obj,
+  mldsa: mldsaObj
+});
+
+if (!edObj || !x25519Obj || !mldsaObj) {
+  setError("No keys found for this user in this browser. Please register first.");
+  setLoading(false);
+  return;
+}
+try {
+  // Try to decrypt a key to check password
+  await getDecryptedPrivateKey(username, 'ed25519', password);
+} catch (e) {
+  setError("Incorrect password or corrupted keys. Please try again.");
+  setLoading(false);
+  return;
+}
+
+
+          // After verifying the user, derive and set the KEK
+          const saltArr = await getObjectFromIndexedDB(`${username}_kdf_salt`);
+          if (!saltArr) throw new Error('Missing KDF salt');
+          const salt = new Uint8Array(saltArr);
+          const kek = await deriveKEK(password, salt);
+          setKEK(kek);
 
           // No token logic: just set username in localStorage if keepSignedIn
           localStorage.setItem("drive_username", username);
