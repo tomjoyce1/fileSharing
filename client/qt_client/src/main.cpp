@@ -22,6 +22,7 @@
 #include "handlers/LoginHandler.h"
 #include "handlers/RegisterHandler.h"
 #include "handlers/FileUploadHandler.h"
+#include "handlers/filelisthandler.h"
 #include "utils/ClientStore.h"
 #include <QDir>
 #include <QDebug>
@@ -42,16 +43,17 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle("Material");
     QQmlApplicationEngine engine;
 
-    HandlerUtils::runAsync([]{});
 
     QString storeFile = defaultStorePath();
     ClientStore clientStore(storeFile.toStdString());
     clientStore.load();
 
 
-    LoginHandler    loginHandler;
+    LoginHandler loginHandler(&clientStore);
     RegisterHandler registerHandler(&clientStore);
     FileUploadHandler* uploadHandler = new FileUploadHandler(&clientStore);
+    FileListHandler* fileListHandler = new FileListHandler(&clientStore);
+    engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
 
     engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
    engine.rootContext()->setContextProperty("registerHandler", &registerHandler);

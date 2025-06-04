@@ -26,15 +26,18 @@ static std::string toHex(const std::vector<uint8_t>& data) {
 FileUploadHandler::FileUploadHandler(ClientStore* store, QObject* parent)
     : QObject(parent), store(store)
 {
-    // Load user (username + KeyBundle) from the store:
-    auto user = store->getUser();
-    if (!user.has_value()) {
-        qWarning() << "[FileUploadHandler] No user registered; cannot upload.";
+    // Load user (must be already logged in, i.e. fullBundle is populated)
+    auto userOpt = store->getUser();
+    if (!userOpt.has_value()) {
+        qWarning() << "[FileUploadHandler] No user logged in; cannot upload.";
         return;
     }
-    username = user->username;
-    keybundle = user->keybundle;
+    const auto& userInfo = *userOpt;
+    username  = userInfo.username;
+    keybundle = userInfo.fullBundle;
+    // ^ fullBundle contains both public AND private keys, now that loginAndDecrypt() has run.
 }
+
 
 void FileUploadHandler::uploadFiles(const QStringList& fileUrls)
 {

@@ -96,6 +96,25 @@ KeyBundle::KeyBundle() {
     }
 }
 
+// Public only constructor
+KeyBundle::KeyBundle(
+    const std::vector<uint8_t>& x25519Public,
+    const std::vector<uint8_t>& ed25519Public,
+    const std::vector<uint8_t>& dilithiumPublic
+    )
+    : x25519Pub_(x25519Public)
+    , ed25519Pub_(ed25519Public)
+    , dilithiumPub_(dilithiumPublic)
+{
+    if (x25519Pub_.empty() || ed25519Pub_.empty() || dilithiumPub_.empty()) {
+        throw std::invalid_argument(
+            "KeyBundle::KeyBundle(public-only): all public fields must be non-empty"
+            );
+    }
+    // We deliberately leave x25519Priv_, ed25519Priv_, dilithiumPriv_ empty
+    // because this constructor is strictly “public only.”
+}
+
 //───────────────────────────────────────────────────────────────────────────────
 //  Parameterized constructor from raw binary + private for “importing”
 //───────────────────────────────────────────────────────────────────────────────
@@ -265,9 +284,11 @@ KeyBundle KeyBundle::fromJson(const std::string& jsonStr) {
     std::vector<uint8_t> dilithiumBytes = fromBase64(dilithium_b64, "dilithium");
 
     // We do not know the private keys here, so we pass empty vectors:
-    return KeyBundle(x25519Bytes, ed25519Bytes, dilithiumBytes,
-                     {}, {}, {});
+    return KeyBundle(x25519Bytes, ed25519Bytes, dilithiumBytes);
 }
+
+
+
 
 //───────────────────────────────────────────────────────────────────────────────
 //  fromJsonPrivate(...) ← parse public+private keys from the JSON we wrote in toJsonPrivate()
