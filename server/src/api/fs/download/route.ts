@@ -176,7 +176,7 @@ export async function POST(
       metadata: file.metadata,
       pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
       post_quantum_signature: file.post_quantum_signature.toString("base64"),
-      owner_user_id: file.owner_user_id,
+      owner_username: file.owner_username,
       is_owner: file.is_owner,
       ...(file.shared_access && { shared_access: file.shared_access }),
     },
