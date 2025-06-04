@@ -185,16 +185,9 @@ export async function POST(
   return Response.json(
     {
       file_content: fileContent,
-      metadata:
-        typeof file.metadata === "string"
-          ? file.metadata
-          : Buffer.from(file.metadata).toString("base64"),
-      pre_quantum_signature: Buffer.from(file.pre_quantum_signature).toString(
-        "base64"
-      ),
-      post_quantum_signature: Buffer.from(file.post_quantum_signature).toString(
-        "base64"
-      ),
+      metadata: file.metadata,
+      pre_quantum_signature: file.pre_quantum_signature.toString("base64"),
+      post_quantum_signature: file.post_quantum_signature.toString("base64"),
       owner_username: file.owner_username,
       is_owner: file.is_owner,
       ...(file.shared_access && { shared_access: file.shared_access }),
