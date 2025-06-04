@@ -95,21 +95,15 @@ Rectangle {
             }
         }
 
+        // 4) Spacer → pushes buttons to the right edge
+        Item {
+            Layout.fillWidth: true
+        }
+
+
         // FileUploadArea
         FileUploadArea {
             // signals: uploadRequested, cancelRequested…
-        }
-
-        // storage usage
-        Label {
-            text: qsTr("Storage used: 75%")
-            font.pixelSize: 14
-            color: Material.onSurfaceVariant
-            Layout.margins: 8
-        }
-        ProgressBar {
-            value: 0.75
-            Layout.fillWidth: true
         }
     }
 

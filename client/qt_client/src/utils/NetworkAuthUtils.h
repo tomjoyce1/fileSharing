@@ -67,62 +67,94 @@ makeAuthHeaders(
     const std::string& method,
     const std::string& path,
     const std::string& bodyJson
-    )
-{
-    // 1) timestamp in ISO8601 UTC (Qt::ISODate gives e.g. "2025-06-03T15:42:00Z")
+    ) {
+    qDebug().nospace()
+        << "[NetworkAuthUtils] makeAuthHeaders ENTRY"
+           " username=\"" << username << "\""
+                       ", method=\"" << method << "\""
+                     ", path=\"" << path << "\""
+                   ", bodyJson.len=" << bodyJson.size();
+
+    // 1) timestamp in ISO8601 UTC
     QString qsNow = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     std::string timestamp = qsNow.toStdString();
+    qDebug().nospace()
+        << "[NetworkAuthUtils] timestamp = \"" << timestamp << "\"";
 
     // 2) canonical string
     std::string canonical = makeCanonicalString(username, timestamp, method, path, bodyJson);
 
-    //
-    // ─── Ed25519 sign that canonical ───
-    //
-    // 3a) Decode base64→raw bytes
-    std::string edPrivB64 = privBundle.getEd25519PrivateKeyBase64();
-    std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
 
-    // 3b) Sanity‐check: libsodium’s secret key is 64 bytes (seed||public)
-    if (edPrivRaw.size() != static_cast<size_t>(crypto_sign_SECRETKEYBYTES)) {
-        throw std::runtime_error(
-            "Ed25519 private key length is incorrect (" +
-            std::to_string(edPrivRaw.size()) + " bytes; expected " +
-            std::to_string(crypto_sign_SECRETKEYBYTES) + ")"
+    try {
+        //
+        // ─── Ed25519 sign that canonical ───────────────────────────────────────
+        //
+        std::string edPrivB64 = privBundle.getEd25519PrivateKeyBase64();
+        qDebug().nospace()
+            << "[NetworkAuthUtils] edPrivB64.len=" << edPrivB64.size();
+        std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
+        qDebug().nospace()
+            << "[NetworkAuthUtils] after base64_decode(edPrivB64): edPrivRaw.size="
+            << edPrivRaw.size();
+
+        Signer_Ed edSigner;
+        edSigner.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
+        qDebug() << "[NetworkAuthUtils] Signer_Ed loaded successfully";
+
+        std::vector<uint8_t> edSig = edSigner.sign(
+            std::vector<uint8_t>(canonical.begin(), canonical.end())
             );
+        qDebug().nospace()
+            << "[NetworkAuthUtils] edSig.size=" << edSig.size();
+
+        std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
+
+        //
+        // ─── Dilithium sign that canonical ─────────────────────────────────────
+        //
+        std::string pqPrivB64 = privBundle.getDilithiumPrivateKeyBase64();
+        qDebug().nospace()
+            << "[NetworkAuthUtils] pqPrivB64.len=" << pqPrivB64.size();
+        std::vector<uint8_t> pqPrivRaw = FileClientData::base64_decode(pqPrivB64);
+        qDebug().nospace()
+            << "[NetworkAuthUtils] after base64_decode(pqPrivB64): pqPrivRaw.size="
+            << pqPrivRaw.size();
+
+        Signer_Dilithium pqSigner;
+        pqSigner.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
+        qDebug() << "[NetworkAuthUtils] Signer_Dilithium loaded successfully";
+
+        std::vector<uint8_t> pqSig = pqSigner.sign(
+            std::vector<uint8_t>(canonical.begin(), canonical.end())
+            );
+        qDebug().nospace()
+            << "[NetworkAuthUtils] pqSig.size=" << pqSig.size();
+
+        std::string pqSigB64 = FileClientData::base64_encode(pqSig.data(), pqSig.size());
+
+        // 5) Combine both signatures
+        std::string combined = edSigB64 + "||" + pqSigB64;
+        qDebug().nospace()
+            << "[NetworkAuthUtils] combinedSig.len=" << combined.size();
+
+        // 6) Build headers
+        std::map<std::string, std::string> hdrs = {
+            { "X-Username",  username },
+            { "X-Timestamp", timestamp },
+            { "X-Signature", combined }
+        };
+
+        qDebug().nospace()
+            << "[NetworkAuthUtils] makeAuthHeaders RETURN headers: "
+               "X-Username=" << hdrs["X-Username"]
+            << ", X-Timestamp=" << hdrs["X-Timestamp"]
+            << ", X-Signature.len=" << hdrs["X-Signature"].size();
+        return hdrs;
     }
-
-    // 3c) Instantiate Signer_Ed, load the 64‐byte secret, and sign
-    Signer_Ed edSigner;
-    edSigner.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
-    std::vector<uint8_t> edSig = edSigner.sign(
-        std::vector<uint8_t>(canonical.begin(), canonical.end())
-        );
-    std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
-
-    //
-    // ─── Dilithium sign that canonical ───
-    //
-    // 4a) Decode base64→raw bytes
-    std::string pqPrivB64 = privBundle.getDilithiumPrivateKeyBase64();
-    std::vector<uint8_t> pqPrivRaw = FileClientData::base64_decode(pqPrivB64);
-
-    // 4b) Instantiate Signer_Dilithium, load the secret, and sign
-    Signer_Dilithium pqSigner;
-    pqSigner.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
-    std::vector<uint8_t> pqSig = pqSigner.sign(
-        std::vector<uint8_t>(canonical.begin(), canonical.end())
-        );
-    std::string pqSigB64 = FileClientData::base64_encode(pqSig.data(), pqSig.size());
-
-    // 5) Combine both signatures
-    std::string combined = edSigB64 + "||" + pqSigB64;
-
-    // 6) Build headers
-    return {
-        { "X-Username",  username },
-        { "X-Timestamp", timestamp },
-        { "X-Signature", combined }
-    };
+    catch (const std::exception& ex) {
+        qDebug().nospace()
+            << "[NetworkAuthUtils] ERROR in makeAuthHeaders: " << ex.what();
+        throw;  // re-throw so caller sees the exception
+    }
 }
 }

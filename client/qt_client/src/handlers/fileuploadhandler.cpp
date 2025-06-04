@@ -1,4 +1,6 @@
 #include "FileUploadHandler.h"
+#include "../utils/handlerutils.h"
+#include "../utils/NetworkAuthUtils.h"
 #include <QFileInfo>
 #include <QDateTime>
 #include <QMetaObject>
@@ -7,10 +9,13 @@
 #include <system_error>
 #include <fstream>
 
-
-// Static helper to convert a byte‐vector into lowercase hex
 namespace {
-static std::string toHex(const std::vector<uint8_t>& data) {
+
+// ─────────────────────────────────────────────────────────────────────────
+// Inline helper: convert a byte vector to lowercase hex string
+// (used instead of a separate toHex function)
+// ─────────────────────────────────────────────────────────────────────────
+static std::string bytesToHex(const std::vector<uint8_t>& data) {
     static const char* lut = "0123456789abcdef";
     std::string out;
     out.reserve(data.size() * 2);
@@ -20,7 +25,8 @@ static std::string toHex(const std::vector<uint8_t>& data) {
     }
     return out;
 }
-}
+
+} // namespace (private)
 
 
 FileUploadHandler::FileUploadHandler(ClientStore* store, QObject* parent)
@@ -33,12 +39,11 @@ void FileUploadHandler::uploadFiles(const QStringList& fileUrls)
 {
     FileUploadHandler* self = this;
 
-    // Run in background; each fileUrl is processed sequentially in that thread
+    // Run each upload in a background thread sequentially
     HandlerUtils::runAsync([self, fileUrls] {
         for (const QString& qurl : fileUrls) {
             std::string localPath = qurl.toStdString();
             try {
-                // Process that file
                 uint64_t file_id = self->processSingleFile(localPath);
                 if (file_id == 0) {
                     QString msg = QString("Failed to upload %1").arg(qurl);
@@ -70,140 +75,94 @@ void FileUploadHandler::uploadFiles(const QStringList& fileUrls)
     });
 }
 
+// Returns File id
 uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
 {
-    // Read the file bytes
+    // Read file
     std::vector<uint8_t> plaintext = readFileBytes(localPath);
     if (plaintext.empty()) {
         qWarning() << "[ERROR]" << "readFileBytes returned empty for"
                    << QString::fromStdString(localPath);
-        return 0ULL;
+        return 0;
     }
 
-    // Construct FileClientData with random values
+    // Create FileClientData (generates random FEK & MEK)
     FileClientData fcd(true);
-    fcd.filename = QFileInfo(QString::fromStdString(localPath)).fileName().toStdString();
+    fcd.filename = QFileInfo(QString::fromStdString(localPath))
+                       .fileName()
+                       .toStdString();
 
-    // Encrypt file contents with AES-256-CTR
-    Symmetric::Ciphertext encFile; // Ciphertext struct
+    // Encrypt file contents under FEK (AES-256-CTR)
+    std::array<uint8_t, 16> fileNonce{};
+    Symmetric::Ciphertext encFile;
     try {
-        encFile = Symmetric::encrypt(
-            plaintext,
-            std::vector<uint8_t>(fcd.fek.begin(), fcd.fek.end())
-            );
+        encFile = encryptFileContent(plaintext, fcd.fek, fileNonce);
+        fcd.file_nonce = fileNonce;
     }
     catch (const std::exception& ex) {
-        qWarning() << "[ERROR]" << "Symmetric::encrypt(file) threw:" << ex.what();
-        return 0ULL;
+        qWarning() << "[ERROR]" << "encryptFileContent threw:" << ex.what();
+        return 0;
     }
 
-    // Copy IV into fcd.file_nonce
-    fcd.file_nonce.fill(0);
-    std::copy(encFile.iv.begin(), encFile.iv.end(), fcd.file_nonce.begin());
+    std::string metaPlain = buildPlainMetadata(fcd.filename, plaintext.size());
 
-    // Build metadata JSON
-    nlohmann::json jmeta;
-    try {
-        jmeta["filename"] = fcd.filename;
-        jmeta["filesize"] = plaintext.size();
-    }
-    catch (const std::exception& ex) {
-        qWarning() << "[ERROR]" << "building metadata JSON threw:" << ex.what();
-        return 0ULL;
-    }
-    std::string metaPlain = jmeta.dump();
-
-    // Encrypt metadata JSON with AES-256-CTR
+    // Encrypt metadata under MEK (AES-256-CTR)
+    std::array<uint8_t, 16> metaNonce{};
     Symmetric::Ciphertext encMeta;
     try {
-        std::vector<uint8_t> metaBytes(metaPlain.begin(), metaPlain.end());
-        encMeta = Symmetric::encrypt(
-            metaBytes,
-            std::vector<uint8_t>(fcd.mek.begin(), fcd.mek.end())
-            );
+        encMeta = encryptMetadata(metaPlain, fcd.mek, metaNonce);
+        fcd.metadata_nonce = metaNonce;
     }
     catch (const std::exception& ex) {
-        qWarning() << "[ERROR]" << "Symmetric::encrypt(metadata) threw:" << ex.what();
+        qWarning() << "[ERROR]" << "encryptMetadata threw:" << ex.what();
         return 0ULL;
     }
 
-    // Copy IV into fcd.metadata_nonce
-    fcd.metadata_nonce.fill(0);
-    std::copy(encMeta.iv.begin(), encMeta.iv.end(), fcd.metadata_nonce.begin());
-
-    // Base64‐encode only the ciphertext bytes
-    auto encodeB64 = [&](const std::vector<uint8_t>& buf) {
-        return FileClientData::base64_encode(buf.data(), buf.size());
-    };
-    std::string fileB64, metaB64;
-    try {
-        fileB64 = encodeB64(encFile.data);
-        metaB64 = encodeB64(encMeta.data);
-    }
-    catch (const std::exception& ex) {
-        qWarning() << "[ERROR]" << "base64_encode threw:" << ex.what();
-        return 0ULL;
-    }
-
-    // fetch fresh store info
+    // Fetch logged-in user’s username + KeyBundle from ClientStore
     auto maybeUser = store->getUser();
     if (!maybeUser.has_value()) {
-        throw std::runtime_error("No logged‐in user when trying to sign upload");
+        throw std::runtime_error("No logged-in user when trying to sign upload");
     }
-    const auto& keybundle = maybeUser->fullBundle;
-    const auto& username  = maybeUser->username;
+    const auto& userInfo   = *maybeUser;
+    const auto& keybundle  = userInfo.fullBundle;
+    const auto& username   = userInfo.username;
+
+    // TODO remove later
+    std::string edB64 = keybundle.getEd25519PrivateKeyBase64();
+    std::vector<uint8_t> edRaw = FileClientData::base64_decode(edB64);
+    qDebug().nospace() << "[FileUploadHandler] before encrypting ‘"
+                       << localPath.c_str()
+                       << "’, username=" << username.c_str()
+                       << ", ed25519PrivB64 length=" << edB64.length()
+                       << ", raw bytes=" << edRaw.size();
+
+    if (edRaw.size() != crypto_sign_SECRETKEYBYTES) {
+        qWarning().nospace() << "[FileUploadHandler] WARNING: ed25519Priv is not 64 bytes!";
+        // (You might even return 0 here to abort.)
+    }
 
 
-    // Build the signature input (username|sha256(fileCipher)|sha256(metaCipher))
-    std::string sigInput = buildSignatureInput(username, fileB64, metaB64);
+    /// Compute SHA-256 over the raw ciphertext
+    std::vector<uint8_t> fileHash = Hash::sha256(encFile.data);
+    std::vector<uint8_t> metaHash = Hash::sha256(encMeta.data);
+
+    // Convert each hash to lowercase hex
+    std::string fileHashHex = bytesToHex(fileHash);
+    std::string metaHashHex = bytesToHex(metaHash);
+
+    // Now base64-encode for sending
+    std::string fileB64 = base64Encode(encFile.data);
+    std::string metaB64 = base64Encode(encMeta.data);
+
+    std::ostringstream oss;
+    oss << username << "|" << fileHashHex << "|" << metaHashHex;
+    std::string sigInput = oss.str();
     std::vector<uint8_t> msgBytes(sigInput.begin(), sigInput.end());
 
-    // ─── Ed25519 sign that sigInput ───
-    std::string edPrivB64 = keybundle.getEd25519PrivateKeyBase64();
-    std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
+    std::string edSigB64 = signWithEd25519(keybundle, msgBytes);
+    std::string pqSigB64 = signWithDilithium(keybundle, msgBytes);
 
-    // Sanity-check: libsodium’s secret key is 64 bytes (32-byte seed + 32-byte public)
-    qDebug() << "[FileUpload] raw Ed25519 key length =" << static_cast<int>(edPrivRaw.size());
-    if (edPrivRaw.size() != crypto_sign_SECRETKEYBYTES) {
-        throw std::runtime_error(
-            "Ed25519 private key length is incorrect (" +
-            std::to_string(edPrivRaw.size()) + " bytes; expected " +
-            std::to_string(crypto_sign_SECRETKEYBYTES) + ")"
-            );
-    }
-
-    Signer_Ed signerEd;
-    signerEd.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
-    std::vector<uint8_t> edSig = signerEd.sign(msgBytes);
-    std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
-
-
-
-
-    // Dilithium sign that sigInput
-    std::string pqPrivB64 = keybundle.getDilithiumPrivateKeyBase64();
-    std::vector<uint8_t> pqPrivRaw = FileClientData::base64_decode(pqPrivB64);
-    Signer_Dilithium signerPQ;
-    signerPQ.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
-    std::vector<uint8_t> pqSig = signerPQ.sign(msgBytes);
-    std::string pqSigB64 = FileClientData::base64_encode(pqSig.data(), pqSig.size());
-
-
-    // ─── Debug / sanity check for Dilithium key length ───
-    qDebug() << "[FileUpload] raw Dilithium key length =" << static_cast<int>(pqPrivRaw.size());
-    // (Replace  /*EXPECTED_LEN*/ below with the exact expected length for your Dilithium scheme,
-    // e.g. if you know your private key is supposed to be 3508 bytes, put 3508.)
-    constexpr size_t EXPECTED_DILITHIUM_PRIV_LEN =  /* e.g. 3508 */ 0;
-    if (EXPECTED_DILITHIUM_PRIV_LEN != 0) {
-        if (pqPrivRaw.size() != EXPECTED_DILITHIUM_PRIV_LEN) {
-            throw std::runtime_error(
-                "Dilithium private key length is incorrect (" +
-                std::to_string(pqPrivRaw.size()) + " bytes)"
-                );
-        }
-    }
-
-    // Build body JSON (it has to be in this specifc order!)
+    // Build the JSON body for /api/fs/upload
     nlohmann::ordered_json jbody;
     jbody["file_content"]           = fileB64;
     jbody["metadata"]               = metaB64;
@@ -211,8 +170,6 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     jbody["post_quantum_signature"] = pqSigB64;
     std::string bodyString = jbody.dump();
 
-
-    // Build auth headers
     auto headers = NetworkAuthUtils::makeAuthHeaders(
         username,
         keybundle,
@@ -221,37 +178,37 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         bodyString
         );
 
-    // Build request (no need to add Host manually; toString() will do it)
-    HttpRequest req(HttpRequest::Method::POST, "/api/fs/upload", bodyString, headers);
-
+    HttpRequest req(HttpRequest::Method::POST,
+                    "/api/fs/upload",
+                    bodyString,
+                    headers);
     AsioHttpClient client;
-    client.init("");
-    HttpResponse resp = client.sendRequest(req);   // uses Config::instance().serverHost/port
+    client.init("");  // uses Config::instance().serverHost/port
+    HttpResponse resp = client.sendRequest(req);
 
     qDebug() << "[CLIENT]" << "→ HTTP status code =" << resp.statusCode;
     qDebug() << "[CLIENT]" << "→ HTTP body =" << QString::fromStdString(resp.body);
 
-    if (resp.statusCode == 201) {
-        // Parse response JSON to extract file_id
-        uint64_t newFileId = 0;
-        try {
-            auto respJson = nlohmann::json::parse(resp.body);
-            newFileId = respJson.at("file_id").get<uint64_t>();
-        }
-        catch (const std::exception& ex) {
-            qWarning() << "[ERROR]" << "parsing response JSON threw:" << ex.what();
-            return 0ULL;
-        }
-
-        // On success store FileClientData
-        fcd.file_id = newFileId;
-        store->upsertFileData(fcd);
-        return newFileId;
+    // On 201 Created, parse file_id and store FileClientData
+    if (resp.statusCode != 201) {
+        return 0;
     }
 
-    // On error
-    return 0ULL;
+    uint64_t newFileId = 0;
+    try {
+        auto respJson = nlohmann::json::parse(resp.body);
+        newFileId = respJson.at("file_id").get<uint64_t>();
+    }
+    catch (const std::exception& ex) {
+        qWarning() << "[ERROR]" << "parsing response JSON threw:" << ex.what();
+        return 0;
+    }
+
+    fcd.file_id = newFileId;
+    store->upsertFileData(fcd);
+    return newFileId;
 }
+
 
 std::vector<uint8_t> FileUploadHandler::readFileBytes(const std::string& path)
 {
@@ -270,20 +227,97 @@ std::vector<uint8_t> FileUploadHandler::readFileBytes(const std::string& path)
     return data;
 }
 
-std::string FileUploadHandler::buildSignatureInput(const std::string& uname,
-                                                   const std::string& fileB64,
-                                                   const std::string& metaB64)
+
+Symmetric::Ciphertext FileUploadHandler::encryptFileContent(
+    const std::vector<uint8_t>& plaintext,
+    const std::array<uint8_t, 32>& fek,
+    std::array<uint8_t, 16>& outFileNonce)
 {
-    // Decode base64 back to ciphertext
-    std::vector<uint8_t> fileCipher = FileClientData::base64_decode(fileB64);
-    std::vector<uint8_t> metaCipher = FileClientData::base64_decode(metaB64);
+    std::vector<uint8_t> fekVec(fek.begin(), fek.end());
+    Symmetric::Ciphertext ct = Symmetric::encrypt(plaintext, fekVec);
+    std::fill(outFileNonce.begin(), outFileNonce.end(), 0);
+    std::copy(ct.iv.begin(), ct.iv.end(), outFileNonce.begin());
+    return ct;
+}
 
-    // SHA‐256 each
-    std::string fileHashHex = toHex(Hash::sha256(fileCipher));
-    std::string metaHashHex = toHex(Hash::sha256(metaCipher));
 
-    // Concatenate: uname|fileHashHex|metaHashHex
-    std::ostringstream oss;
-    oss << uname << "|" << fileHashHex << "|" << metaHashHex;
-    return oss.str();
+std::string FileUploadHandler::buildPlainMetadata(const std::string& filename,
+                                                  size_t filesize)
+{
+    nlohmann::json jmeta;
+    jmeta["filename"] = filename;
+    jmeta["filesize"] = filesize;
+    return jmeta.dump();
+}
+
+
+Symmetric::Ciphertext FileUploadHandler::encryptMetadata(
+    const std::string& metaPlain,
+    const std::array<uint8_t, 32>& mek,
+    std::array<uint8_t, 16>& outMetadataNonce)
+{
+    std::vector<uint8_t> metaBytes(metaPlain.begin(), metaPlain.end());
+    std::vector<uint8_t> mekVec(mek.begin(), mek.end());
+    Symmetric::Ciphertext ct = Symmetric::encrypt(metaBytes, mekVec);
+    std::fill(outMetadataNonce.begin(), outMetadataNonce.end(), 0);
+    std::copy(ct.iv.begin(), ct.iv.end(), outMetadataNonce.begin());
+    return ct;
+}
+
+
+std::string FileUploadHandler::base64Encode(const std::vector<uint8_t>& buf)
+{
+    return FileClientData::base64_encode(buf.data(), buf.size());
+}
+
+
+std::string FileUploadHandler::signWithEd25519(
+    const KeyBundle& kb,
+    const std::vector<uint8_t>& msg)
+{
+    std::string edPrivB64 = kb.getEd25519PrivateKeyBase64();
+    std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
+
+    qDebug().nospace() << "[signWithEd25519] edPrivB64 length=" << edPrivB64.length()
+                       << ", raw bytes=" << edPrivRaw.size();
+
+
+    if (edPrivRaw.size() != static_cast<size_t>(crypto_sign_SECRETKEYBYTES)) {
+        throw std::runtime_error(
+            "Ed25519 private key length is incorrect ("
+            + std::to_string(edPrivRaw.size())
+            + " bytes; expected "
+            + std::to_string(crypto_sign_SECRETKEYBYTES)
+            + ")"
+            );
+    }
+
+    Signer_Ed signerEd;
+    signerEd.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
+    std::vector<uint8_t> edSig = signerEd.sign(msg);
+
+    qDebug().nospace() << "[signWithEd25519] msg bytes=" << msg.size()
+                       << ", edSig bytes=" << edSig.size();
+    return FileClientData::base64_encode(edSig.data(), edSig.size());
+}
+
+
+std::string FileUploadHandler::signWithDilithium(
+    const KeyBundle& kb,
+    const std::vector<uint8_t>& msg)
+{
+    std::string pqPrivB64 = kb.getDilithiumPrivateKeyBase64();
+    std::vector<uint8_t> pqPrivRaw = FileClientData::base64_decode(pqPrivB64);
+
+    qDebug().nospace() << "[signWithDilithium] pqPrivB64 length=" << pqPrivB64.length()
+                       << ", raw bytes=" << pqPrivRaw.size();
+
+    Signer_Dilithium signerPQ;
+    signerPQ.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
+    std::vector<uint8_t> pqSig = signerPQ.sign(msg);
+
+    qDebug().nospace() << "[signWithDilithium] msg bytes=" << msg.size()
+                       << ", pqSig bytes=" << pqSig.size();
+
+    return FileClientData::base64_encode(pqSig.data(), pqSig.size());
 }

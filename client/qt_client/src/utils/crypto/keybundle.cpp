@@ -6,6 +6,7 @@
 #include "Signer_Ed.h"
 #include "Signer_Dilithium.h"
 #include "DerUtils.h"
+#include "QDebug"
 
 static constexpr int BASE64_VARIANT = sodium_base64_VARIANT_ORIGINAL;
 
@@ -186,9 +187,17 @@ KeyBundle& KeyBundle::operator=(KeyBundle&& other) noexcept {
 //  toJson() ≔ only public keys, exactly what the server’s “register” expects
 //───────────────────────────────────────────────────────────────────────────────
 std::string KeyBundle::toJson() const {
-    const std::string kemB64   = toBase64( der::x25519(x25519Pub_) );
-    const std::string edB64    = toBase64( der::ed25519(ed25519Pub_) );
-    const std::string dilB64   = toBase64( dilithiumPub_ ); // already raw‐raw
+    qDebug().nospace()
+        << "[KeyBundle::toJson] x25519Pub_.size()=" << x25519Pub_.size()
+        << ", ed25519Pub_.size()="   << ed25519Pub_.size()
+        << ", dilithiumPub_.size()=" << dilithiumPub_.size();
+
+    // If these vectors already contain SPKI-DER bytes, just encode them directly:
+    const std::string kemB64 = toBase64(x25519Pub_);   // already DER(44 bytes)
+    const std::string edB64  = toBase64(ed25519Pub_);  // already DER(~2592 bytes)
+    const std::string dilB64 = toBase64(dilithiumPub_);
+
+    qDebug().nospace() << "serializing JSON with DER blobs…";
 
     std::ostringstream oss;
     oss << R"({"preQuantum":{"identityKemPublicKey":")" << kemB64
@@ -197,6 +206,7 @@ std::string KeyBundle::toJson() const {
         << R"("}})";
     return oss.str();
 }
+
 
 nlohmann::json KeyBundle::toJsonPublic() const {
     return nlohmann::json::parse(toJson());
@@ -208,24 +218,7 @@ nlohmann::json KeyBundle::toJsonPublic() const {
 nlohmann::json KeyBundle::toJsonPrivate() const {
     nlohmann::json jpub = toJsonPublic();
 
-    // We know `toJsonPublic()` gave us something like:
-    // {
-    //   "preQuantum": { "identityKemPublicKey": "...", "identitySigningPublicKey": "..." },
-    //   "postQuantum": { "identitySigningPublicKey": "..." }
-    // }
-    // We want to embed _private_ keys alongside, e.g.:
-    // {
-    //   "preQuantum": {
-    //       "identityKemPublicKey": "...",
-    //       "identitySigningPublicKey": "...",
-    //       "identityKemPrivateKey": "<base64 of x25519Priv_>",
-    //       "identitySigningPrivateKey": "<base64 of ed25519Priv_>"
-    //    },
-    //   "postQuantum": {
-    //       "identitySigningPublicKey": "...",
-    //       "identitySigningPrivateKey": "<base64 of dilithiumPriv_>"
-    //    }
-    // }
+    // … existing comments …
 
     // Copy public‐side JSON:
     nlohmann::json jpriv = jpub;
@@ -234,6 +227,32 @@ nlohmann::json KeyBundle::toJsonPrivate() const {
     jpriv["preQuantum"]["identityKemPrivateKey"]     = toBase64(x25519Priv_);
     jpriv["preQuantum"]["identitySigningPrivateKey"] = toBase64(ed25519Priv_);
     jpriv["postQuantum"]["identitySigningPrivateKey"] = toBase64(dilithiumPriv_);
+
+    // ─── INSERT THIS DEBUG BLOCK ──────────────────────────────────────────────
+    {
+        // Base64 strings:
+        const std::string kemPrivB64        = jpriv["preQuantum"]["identityKemPrivateKey"].get<std::string>();
+        const std::string edPrivB64         = jpriv["preQuantum"]["identitySigningPrivateKey"].get<std::string>();
+        const std::string dilithiumPrivB64  = jpriv["postQuantum"]["identitySigningPrivateKey"].get<std::string>();
+
+        // Decode each back to raw bytes so we know their true size:
+        std::vector<uint8_t> kemPrivRaw       = fromBase64(kemPrivB64,        "x25519Priv");
+        std::vector<uint8_t> edPrivRaw        = fromBase64(edPrivB64,         "ed25519Priv");
+        std::vector<uint8_t> dilithiumPrivRaw = fromBase64(dilithiumPrivB64,  "dilithiumPriv");
+
+        qDebug().nospace() << "[KeyBundle::toJsonPrivate] "
+                           << "kemPrivB64.length="   << kemPrivB64.length()
+                           << ", kemPrivRaw.size="   << kemPrivRaw.size()
+                           << " | edPrivB64.length=" << edPrivB64.length()
+                           << ", edPrivRaw.size="    << edPrivRaw.size()
+                           << " | dilithiumPrivB64.length="  << dilithiumPrivB64.length()
+                           << ", dilithiumPrivRaw.size="    << dilithiumPrivRaw.size();
+        // Expect:
+        //   kemPrivRaw.size()       == 32
+        //   edPrivRaw.size()        == crypto_sign_SECRETKEYBYTES (64)
+        //   dilithiumPrivRaw.size() == (OQS_SIG_dilithium_5_length, e.g. ~4896)
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     return jpriv;
 }

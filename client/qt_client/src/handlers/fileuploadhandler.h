@@ -1,4 +1,5 @@
 #pragma once
+
 #include <QObject>
 #include <QStringList>
 #include <nlohmann/json.hpp>
@@ -9,8 +10,6 @@
 #include "../utils/crypto/Signer_Ed.h"
 #include "../utils/crypto/Signer_Dilithium.h"
 #include "../utils/crypto/Hash.h"
-#include "../utils/NetworkAuthUtils.h"
-#include "../utils/HandlerUtils.h"
 #include "../utils/networking/AsioHttpClient.h"
 #include "../utils/networking/HttpRequest.h"
 #include "../utils/networking/HttpResponse.h"
@@ -18,16 +17,20 @@
 /**
  * FileUploadHandler
  *
- * QML calls uploadFiles(fileUrls).  For each file:
- *   1. read bytes, 2. build FileClientData (FEK/MEK/IVs),
- *   3. encrypt file/metadata,
- *   4. base64‐encode ciphertexts,
- *   5. compute sha256 hashes, sign with Ed25519 + Dilithium,
- *   6. build JSON, build dual‐signature headers, POST /api/fs/upload,
- *   7. on success, store FileClientData in ClientStore.
+ * Exposes uploadFiles(fileUrls) to QML.  For each file:
+ *   1. Read bytes from disk
+ *   2. Build a new FileClientData (generates FEK, MEK, etc.)
+ *   3. Encrypt file contents under FEK (AES-256-CTR)
+ *   4. Encrypt metadata JSON (filename + size) under MEK (AES-256-CTR)
+ *   5. Base64-encode ciphertexts
+ *   6. Compute sha256(fileCipher) and sha256(metaCipher), convert to hex
+ *   7. Sign “username|fileHashHex|metaHashHex” with Ed25519 & Dilithium
+ *   8. Build JSON body and dual‐signature headers, send POST /api/fs/upload
+ *   9. On 201 Created, parse returned file_id and store FileClientData in ClientStore
  *
- *   Chris C++ Requirements:
- *   - Classes and Objects (instance in main.cpp)
+ * The inlined code for building headers, sending the request, and handling the response
+ * matches your existing logic exactly.  We keep base64Encode, signWithEd25519, and
+ * signWithDilithium as private helpers.
  */
 class FileUploadHandler : public QObject {
     Q_OBJECT
@@ -36,26 +39,46 @@ public:
     explicit FileUploadHandler(ClientStore* store, QObject* parent = nullptr);
     ~FileUploadHandler() override = default;
 
-    /** Invoked from QML: uploads all files in the list */
+    /** Called from QML; iterates through fileUrls and uploads each one */
     Q_INVOKABLE void uploadFiles(const QStringList& fileUrls);
 
 signals:
-    /** For each file, emits Success/Error/Exception + message */
+    /** Emits “Success” or “Error” per file back to QML */
     void uploadResult(const QString& title, const QString& message);
 
 private:
-    /** Process one file.  Returns new file_id or 0 on failure. */
+    /** Orchestrates all steps for a single file. Returns new file_id or 0 on failure */
     uint64_t processSingleFile(const std::string& localPath);
 
-    /** Read entire file into vector<uint8_t>. */
+    // ─── Step 1: Read “localPath” into a vector<uint8_t> ─────────────────────────
     std::vector<uint8_t> readFileBytes(const std::string& path);
 
-    /** Given username, fileB64, metaB64, return "username|sha256(file)|sha256(meta)" */
-    std::string buildSignatureInput(const std::string& uname,
-                                    const std::string& fileB64,
-                                    const std::string& metaB64);
+    // ─── Step 2: Build and encrypt file content under FEK ────────────────────────
+    Symmetric::Ciphertext encryptFileContent(
+        const std::vector<uint8_t>& plaintext,
+        const std::array<uint8_t, 32>& fek,
+        std::array<uint8_t, 16>& outFileNonce
+        );
 
+    // ─── Step 3: Build metadata JSON (filename + size) ──────────────────────────
+    std::string buildPlainMetadata(const std::string& filename, size_t filesize);
+
+    // ─── Step 4: Encrypt metadata JSON under MEK ────────────────────────────────
+    Symmetric::Ciphertext encryptMetadata(
+        const std::string& metaPlain,
+        const std::array<uint8_t, 32>& mek,
+        std::array<uint8_t, 16>& outMetadataNonce
+        );
+
+    // ─── Helper: Base64-encode a byte buffer ────────────────────────────────────
+    static std::string base64Encode(const std::vector<uint8_t>& buf);
+
+    // ─── Helper: Sign “msg” via Ed25519, return base64(signature) ───────────────
+    std::string signWithEd25519(const KeyBundle& kb, const std::vector<uint8_t>& msg);
+
+    // ─── Helper: Sign “msg” via Dilithium, return base64(signature) ─────────────
+    std::string signWithDilithium(const KeyBundle& kb, const std::vector<uint8_t>& msg);
+
+private:
     ClientStore* store;
-    std::string username;
-    KeyBundle keybundle;
 };

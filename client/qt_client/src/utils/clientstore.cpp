@@ -198,28 +198,35 @@ void ClientStore::removeFileData(uint64_t file_id) {
 json ClientStore::to_json() const {
     // Assumes caller already holds m_mutex
     json j;
-
     if (m_user.has_value()) {
         const auto& u = *m_user;
         json uj;
-        uj["username"] = u.username;
-
-        // Base64-encode salt, masterNonce, masterEnc, privNonce, privEnc:
+        uj["username"]     = u.username;
         uj["salt"]         = base64Encode(u.salt);
         uj["master_nonce"] = base64Encode(u.masterNonce);
         uj["master_enc"]   = base64Encode(u.masterEnc);
         uj["priv_nonce"]   = base64Encode(u.privNonce);
         uj["priv_enc"]     = base64Encode(u.privEnc);
 
-        // PublicKeyBundle (plain JSON)
-        uj["public_keybundle"] = u.publicBundle.toJsonPublic();
+        // ── DEBUG: print out lengths BEFORE writing to disk ──
+        CLS_LOG("to_json")
+            << "Writing user fields => "
+            << "saltB64.len="        << uj["salt"].get<std::string>().length()
+            << ", masterNonceB64.len=" << uj["master_nonce"].get<std::string>().length()
+            << ", masterEncB64.len="   << uj["master_enc"].get<std::string>().length()
+            << ", privNonceB64.len="   << uj["priv_nonce"].get<std::string>().length()
+            << ", privEncB64.len="     << uj["priv_enc"].get<std::string>().length();
+        // You should see: saltB64.len=24, masterNonceB64.len=24,
+        // masterEncB64.len>0, privNonceB64.len=24, privEncB64>1000 (or so).
 
+        uj["public_keybundle"] = u.publicBundle.toJsonPublic();
+        CLS_LOG("to_json") << "user move next! ";
         j["user"] = std::move(uj);
         CLS_LOG("to_json") << "serialized user: " << QString::fromStdString(u.username);
-    }
-    else {
+    } else {
         CLS_LOG("to_json") << "no user to serialize";
     }
+
 
     // Serialize files array
     json arr = json::array();
@@ -457,6 +464,13 @@ bool ClientStore::loginAndDecrypt(const std::string& username,
 
         std::string privJson(reinterpret_cast<char*>(privJsonBytes.data()),
                              privJsonBytes.size());
+
+        std::string privJsonStr(reinterpret_cast<char*>(privJsonBytes.data()),
+                                privJsonBytes.size());
+        qDebug().nospace() << "[ClientStore::loginAndDecrypt] Decrypted JSON ("
+                           << privJsonStr.size() << " bytes):\n"
+                           << privJsonStr;
+
         json j = json::parse(privJson);
 
         // 4) Reconstruct full KeyBundle
