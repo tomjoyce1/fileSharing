@@ -58,6 +58,17 @@ void LoginHandler::doValidateLogin(const QString& username,
         }
     }
 
+    if (success) {
+            auto opt = m_store->getUser();
+            if (opt) {
+                    const auto& kb = opt->fullBundle;
+                    qDebug() << "[DEBUG] ed25519PrivB64 length =" << QString::fromStdString(kb.getEd25519PrivateKeyBase64()).length();
+                    qDebug() << "[DEBUG] x25519PrivB64 length =" << QString::fromStdString(kb.getX25519PrivateKeyBase64()).length();
+                    qDebug() << "[DEBUG] dilithiumPrivB64 length =" << QString::fromStdString(kb.getDilithiumPrivateKeyBase64()).length();
+                }
+       }
+
+
     // Emit back on the main (UI) thread:
     QMetaObject::invokeMethod(
         this,

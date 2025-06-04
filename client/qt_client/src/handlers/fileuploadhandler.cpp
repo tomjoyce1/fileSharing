@@ -26,16 +26,6 @@ static std::string toHex(const std::vector<uint8_t>& data) {
 FileUploadHandler::FileUploadHandler(ClientStore* store, QObject* parent)
     : QObject(parent), store(store)
 {
-    // Load user (must be already logged in, i.e. fullBundle is populated)
-    auto userOpt = store->getUser();
-    if (!userOpt.has_value()) {
-        qWarning() << "[FileUploadHandler] No user logged in; cannot upload.";
-        return;
-    }
-    const auto& userInfo = *userOpt;
-    username  = userInfo.username;
-    keybundle = userInfo.fullBundle;
-    // ^ fullBundle contains both public AND private keys, now that loginAndDecrypt() has run.
 }
 
 
@@ -155,19 +145,40 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
         return 0ULL;
     }
 
+    // fetch fresh store info
+    auto maybeUser = store->getUser();
+    if (!maybeUser.has_value()) {
+        throw std::runtime_error("No logged‐in user when trying to sign upload");
+    }
+    const auto& keybundle = maybeUser->fullBundle;
+    const auto& username  = maybeUser->username;
+
 
     // Build the signature input (username|sha256(fileCipher)|sha256(metaCipher))
     std::string sigInput = buildSignatureInput(username, fileB64, metaB64);
     std::vector<uint8_t> msgBytes(sigInput.begin(), sigInput.end());
 
-
-    // Ed25519 sign that sigInput
+    // ─── Ed25519 sign that sigInput ───
     std::string edPrivB64 = keybundle.getEd25519PrivateKeyBase64();
     std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
+
+    // Sanity-check: libsodium’s secret key is 64 bytes (32-byte seed + 32-byte public)
+    qDebug() << "[FileUpload] raw Ed25519 key length =" << static_cast<int>(edPrivRaw.size());
+    if (edPrivRaw.size() != crypto_sign_SECRETKEYBYTES) {
+        throw std::runtime_error(
+            "Ed25519 private key length is incorrect (" +
+            std::to_string(edPrivRaw.size()) + " bytes; expected " +
+            std::to_string(crypto_sign_SECRETKEYBYTES) + ")"
+            );
+    }
+
     Signer_Ed signerEd;
     signerEd.loadPrivateKey(edPrivRaw.data(), edPrivRaw.size());
     std::vector<uint8_t> edSig = signerEd.sign(msgBytes);
     std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
+
+
+
 
     // Dilithium sign that sigInput
     std::string pqPrivB64 = keybundle.getDilithiumPrivateKeyBase64();
@@ -176,6 +187,21 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     signerPQ.loadPrivateKey(pqPrivRaw.data(), pqPrivRaw.size());
     std::vector<uint8_t> pqSig = signerPQ.sign(msgBytes);
     std::string pqSigB64 = FileClientData::base64_encode(pqSig.data(), pqSig.size());
+
+
+    // ─── Debug / sanity check for Dilithium key length ───
+    qDebug() << "[FileUpload] raw Dilithium key length =" << static_cast<int>(pqPrivRaw.size());
+    // (Replace  /*EXPECTED_LEN*/ below with the exact expected length for your Dilithium scheme,
+    // e.g. if you know your private key is supposed to be 3508 bytes, put 3508.)
+    constexpr size_t EXPECTED_DILITHIUM_PRIV_LEN =  /* e.g. 3508 */ 0;
+    if (EXPECTED_DILITHIUM_PRIV_LEN != 0) {
+        if (pqPrivRaw.size() != EXPECTED_DILITHIUM_PRIV_LEN) {
+            throw std::runtime_error(
+                "Dilithium private key length is incorrect (" +
+                std::to_string(pqPrivRaw.size()) + " bytes)"
+                );
+        }
+    }
 
     // Build body JSON (it has to be in this specifc order!)
     nlohmann::ordered_json jbody;

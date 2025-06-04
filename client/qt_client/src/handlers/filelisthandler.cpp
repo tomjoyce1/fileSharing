@@ -229,6 +229,9 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
         return std::nullopt;
     }
 
+
+
+
     //
     // 4) Parse the plaintext JSON of metadata (e.g. { "name":"foo.txt", "size_bytes":1234, "upload_timestamp":"2025-06-03T10:00:00Z" }):
     //
@@ -245,9 +248,14 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
         return std::nullopt;
     }
 
-    // Extract fields from metadata JSON
-    result.filename   = QString::fromStdString(metaJson.at("name").get<std::string>());
-    result.size_bytes = metaJson.at("size_bytes").get<uint64_t>();
+    qDebug() << "[FileList] Decrypted metadata for file_id=" << result.file_id
+             << ":" << QString::fromStdString(metaJson.dump());
+
+
+    // ─── HERE IS THE FIX ───
+    result.filename   = QString::fromStdString(metaJson.at("filename").get<std::string>());
+    result.size_bytes = metaJson.at("filesize").get<uint64_t>();
+
 
     // Try to read an ISO‐8601 timestamp from metadata; if not present, fallback to server’s upload_timestamp
     if (metaJson.contains("upload_timestamp")) {
