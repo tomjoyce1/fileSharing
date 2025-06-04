@@ -197,6 +197,8 @@ export default function DriveMain() {
 
   const handleLogout = () => {
     localStorage.removeItem("drive_username");
+    localStorage.removeItem("drive_password");
+
     clearKEK();
     window.location.reload();
   };
