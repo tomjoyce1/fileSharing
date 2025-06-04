@@ -17,6 +17,13 @@ export async function fetchFiles(
     const body = { page: pageNumber };
     const bodyString = JSON.stringify(body);
     await sodium.ready;
+    let password = (window as any).inMemoryPassword;
+    if (!password) {
+      setError('Please log in again to view your files.');
+      setFiles([]);
+      setIsLoading(false);
+      return;
+    }
     const edPrivateKey = await getKeyFromIndexedDB(`${username}_ed25519_priv`, password);
     const mldsaPrivateKey = await getKeyFromIndexedDB(`${username}_mldsa_priv`, password);
     if (!edPrivateKey || !mldsaPrivateKey) {

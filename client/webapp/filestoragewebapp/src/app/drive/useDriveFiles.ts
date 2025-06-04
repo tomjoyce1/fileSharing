@@ -10,19 +10,28 @@ export function useDriveFiles(page: number, setError: (msg: string | null) => vo
   useEffect(() => {
     const fetchFiles = async () => {
       const username = localStorage.getItem("drive_username");
-      const password = localStorage.getItem("drive_password");
-      if (!username || !password) {
+      let password = (window as any).inMemoryPassword;
+      if (!username) {
         setError("Not logged in. Please log in first.");
+        setFiles([]);
+        setHasNextPage(false);
+        return;
+      } else {
+        setError(null);
+      }
+      if (!password) {
+        setError('Please log in again to view your files.');
         setFiles([]);
         setHasNextPage(false);
         return;
       }
       setIsLoading(true);
-      setError(null);
       try {
         // Load private keys for signing
         const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519', password);
         const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa', password);
+        console.log(`[newLogs] ed25519Priv:`, ed25519Priv ? '[OK]' : '[MISSING]');
+        console.log(`[newLogs] mldsaPriv:`, mldsaPriv ? '[OK]' : '[MISSING]');
         if (!ed25519Priv || !mldsaPriv) {
           setError("Could not load your private keys. Please log in again.");
           setFiles([]);

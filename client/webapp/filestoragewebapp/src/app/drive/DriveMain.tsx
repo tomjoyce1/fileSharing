@@ -106,8 +106,13 @@ export default function DriveMain() {
   }, [files]);
 
   React.useEffect(() => {
-    if (error && error.includes('Not logged in')) {
+    // Only show alert for errors that are NOT 'Not logged in'
+    if (error && !error.includes('Not logged in')) {
       alert(error);
+    }
+    // Clear error if user is now logged in
+    if (localStorage.getItem('drive_username') && error && error.includes('Not logged in')) {
+      setError(null);
     }
   }, [error]);
 
@@ -136,11 +141,17 @@ export default function DriveMain() {
       };
       // Get user info
       const username = localStorage.getItem("drive_username") || "";
+      const kek = localStorage.getItem("drive_kek") || "";
+      console.log(`[newLogs] Username in localStorage:`, username);
+      console.log(`[newLogs] KEK in localStorage:`, kek ? '[OK]' : '[MISSING]');
       if (!username) throw new Error("Not logged in");
       // Decrypt private keys using KEK
       const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
       const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
       const x25519Priv = await getDecryptedPrivateKey(username, 'x25519');
+      console.log(`[newLogs] ed25519Priv:`, ed25519Priv ? '[OK]' : '[MISSING]');
+      console.log(`[newLogs] mldsaPriv:`, mldsaPriv ? '[OK]' : '[MISSING]');
+      console.log(`[newLogs] x25519Priv:`, x25519Priv ? '[OK]' : '[MISSING]');
       if (!ed25519Priv || !mldsaPriv || !x25519Priv) throw new Error("Could not load your private keys. Please log in again.");
       // Compose privateKeyBundle for uploadFile
       const privateKeyBundle = {
@@ -179,6 +190,9 @@ export default function DriveMain() {
       setPage(1);
     } catch (err) {
       setUploadError((err as Error).message);
+      if ((err as Error).message && (err as Error).message.toLowerCase().includes('malformed key')) {
+        console.error('[newLogs] Upload error: malformed key', err);
+      }
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -197,8 +211,7 @@ export default function DriveMain() {
 
   const handleLogout = () => {
     localStorage.removeItem("drive_username");
-    localStorage.removeItem("drive_password");
-
+    (window as any).inMemoryPassword = undefined;
     clearKEK();
     window.location.reload();
   };
@@ -228,7 +241,7 @@ export default function DriveMain() {
         {uploading && (
           <div className="mb-4 text-blue-400">Uploading file...</div>
         )}
-        {uploadError && (
+        {uploadError && uploadError !== 'Not logged in' && (
           <div className="mb-4 text-red-400">Upload error: {uploadError}</div>
         )}
         <div className="space-y-4">

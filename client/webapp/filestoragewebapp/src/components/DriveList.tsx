@@ -172,6 +172,12 @@ export default function DriveList({
     }
   }, [error]);
 
+  // Add a refresh handler that triggers a real update
+  const handleRefresh = () => {
+    setPage((p: number) => p + 1);
+    setTimeout(() => setPage((p: number) => p - 1), 0);
+  };
+
   const handleDelete = async (item: DriveItem) => {
     if (!window.confirm(`Delete "${item.name}"?`)) return;
     try {
@@ -204,11 +210,16 @@ export default function DriveList({
       });
       if (!res.ok) {
         const errText = await res.text();
+        if (errText.includes('Unknown file')) {
+          // File was already deleted, refresh the list but do not show error
+          handleRefresh();
+          return;
+        }
         setError('Failed to delete file: ' + errText);
         return;
       }
-      // Call parent onDelete to refresh list
-      onDelete(item);
+      // Always refresh file list after delete
+      handleRefresh();
     } catch (err) {
       setError('Failed to delete file: ' + (err instanceof Error ? err.message : String(err)));
     }
@@ -267,11 +278,20 @@ export default function DriveList({
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800">
       {/* List Header */}
-      <div className="grid grid-cols-12 gap-4 border-b border-gray-700 p-4 text-sm font-medium text-gray-400">
+      <div className="grid grid-cols-12 gap-4 border-b border-gray-700 p-4 text-sm font-medium text-gray-400 items-center">
         <div className="col-span-6">Name</div>
         <div className="col-span-2">Size</div>
         <div className="col-span-3">Modified</div>
-        <div className="col-span-1"></div>
+        <div className="col-span-1 flex justify-end">
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="ml-2 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-600"
+            title="Refresh file list"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Items */}

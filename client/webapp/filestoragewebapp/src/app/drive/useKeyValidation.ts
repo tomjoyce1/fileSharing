@@ -7,6 +7,8 @@ export function useKeyValidation(page: number, setError: (msg: string|null) => v
       if (!username) {
         setError("Not logged in. Please log in first.");
         return;
+      } else {
+        setError(null); // Clear error if logged in
       }
       try {
         // Directly retry fetching files without key validation

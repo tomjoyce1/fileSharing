@@ -73,11 +73,11 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
     const clientDataStr = localStorage.getItem(`client_data_${fileId}`);
     if (!clientDataStr) throw new Error('Missing decryption keys for this file.');
     const clientData = JSON.parse(clientDataStr);
-    const username = localStorage.getItem('drive_username') || '';
-    let password = localStorage.getItem('drive_password') || '';
+    let password = (window as any).inMemoryPassword;
     if (!password) {
-      password = window.prompt('Enter your password to unlock your keys:') || '';
+      password = window.prompt('Enter your password to unlock your keys:') || undefined;
       if (!password) throw new Error('Password required to unlock keys');
+      (window as any).inMemoryPassword = password;
     }
     const mek = new Uint8Array(clientData.mek);
     const metadataNonce = new Uint8Array(clientData.metadataNonce);
@@ -108,10 +108,11 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
       if (!clientData) throw new Error('Missing decryption keys for this file.');
       // 2. Make authenticated request to /api/fs/download (with signatures and timestamp)
       const username = localStorage.getItem('drive_username') || '';
-      let password = localStorage.getItem('drive_password') || '';
+      let password = (window as any).inMemoryPassword;
       if (!password) {
-        password = window.prompt('Enter your password to unlock your keys:') || '';
+        password = window.prompt('Enter your password to unlock your keys:') || undefined;
         if (!password) throw new Error('Password required to unlock keys');
+        (window as any).inMemoryPassword = password;
       }
       // Load private keys for signing
       const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
