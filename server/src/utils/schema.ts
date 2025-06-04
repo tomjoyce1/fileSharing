@@ -57,6 +57,7 @@ export interface FileMetadataListItem {
   pre_quantum_signature: string;
   post_quantum_signature: string;
   is_owner: boolean;
+  owner_username: string;
   shared_access?: {
     encrypted_fek: string;
     encrypted_fek_nonce: string;
