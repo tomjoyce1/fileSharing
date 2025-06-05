@@ -1,4 +1,3 @@
-// ─── DerUtils.h ───────────────────────────────────────────────────────────────
 #pragma once
 #include <vector>
 #include <cstddef>
@@ -27,4 +26,4 @@ inline std::vector<uint8_t> ed25519(const std::vector<uint8_t>& v) {
 std::vector<uint8_t> parseX25519Spki(const std::vector<uint8_t>& der);
 std::vector<uint8_t> parseEd25519Spki(const std::vector<uint8_t>& der);
 
-} // namespace der
+}

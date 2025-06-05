@@ -1,4 +1,3 @@
-// ─── DerUtils.cpp ─────────────────────────────────────────────────────────────
 #include "DerUtils.h"
 #include <openssl/x509.h>
 #include <stdexcept>
@@ -41,7 +40,7 @@ bool looksLikeSpki44(const uint8_t* buf, std::size_t len, int nid)
     return ok;
 }
 
-} // namespace
+}
 
 namespace der {
 
@@ -96,4 +95,4 @@ std::vector<uint8_t> parseEd25519Spki(const std::vector<uint8_t>& der)
     return raw;
 }
 
-} // namespace der
+}

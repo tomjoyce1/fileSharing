@@ -11,7 +11,6 @@
 #include "../utils/crypto/Hash.h"
 #include "../utils/NetworkAuthUtils.h"
 #include "../utils/HandlerUtils.h"
-#include "../utils/networking/AsioHttpClient.h"
 #include "../utils/networking/HttpRequest.h"
 #include "../utils/networking/HttpResponse.h"
 

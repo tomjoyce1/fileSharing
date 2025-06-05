@@ -10,7 +10,10 @@
 #include "handlers/FileUploadHandler.h"
 #include "handlers/FileListHandler.h"
 #include "handlers/filedownloadhandler.h"
+#include "handlers/passwordchangehandler.h"
+#include "handlers/filesharehandler.h"
 #include "utils/ClientStore.h"
+#include "utils/networking/asiosslclient.h"
 
 static QString defaultStorePath() {
 #ifdef Q_OS_WIN
@@ -25,6 +28,8 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle("Material");  // Use Material style
 
+
+
     // 1) Load (or create) the ClientStore
     QString storeFile = defaultStorePath();
     ClientStore clientStore(storeFile.toStdString());
@@ -33,16 +38,28 @@ int main(int argc, char *argv[])
     // 2) Create LoginHandler & RegisterHandler (they do NOT need fullBundle yet)
     LoginHandler    loginHandler(&clientStore);
     RegisterHandler registerHandler(&clientStore);
+    PasswordChangeHandler pwdHandler(&clientStore);
 
     // 3) Expose only loginHandler & registerHandler to QML (for the login/register screens)
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
     engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+    engine.rootContext()->setContextProperty("passwordHandler", &pwdHandler);
+
 
     // 4) Placeholder pointers for upload/list; will create them only on successful login/register
     FileUploadHandler* uploadHandler   = nullptr;
     FileListHandler*   fileListHandler = nullptr;
     FileDownloadHandler* downloadHandler = nullptr;
+    FileShareHandler* fileShareHandler = nullptr;
+
+    auto &cfg = Config::instance();
+    QString absPem = QDir(QCoreApplication::applicationDirPath())
+                         .filePath(QString::fromStdString(cfg.caBundle));
+    cfg.caBundle = absPem.toStdString();
+
+    AsioSslClient httpClient;
+    httpClient.init(Config::instance().caBundle);
 
     // 5) Once login succeeds, construct + expose FileUploadHandler & FileListHandler
     QObject::connect(
@@ -59,10 +76,12 @@ int main(int argc, char *argv[])
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
                 downloadHandler = new FileDownloadHandler(&clientStore);
+                fileShareHandler = new FileShareHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
                 engine.rootContext()->setContextProperty("downloadHandler", downloadHandler);
+                engine.rootContext()->setContextProperty("shareHandler", fileShareHandler);
 
                 fileListHandler->listAllFiles(1);
             }
@@ -84,10 +103,13 @@ int main(int argc, char *argv[])
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
                 downloadHandler = new FileDownloadHandler(&clientStore);
+                fileShareHandler = new FileShareHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
                 engine.rootContext()->setContextProperty("downloadHandler", downloadHandler);
+                engine.rootContext()->setContextProperty("shareHandler", fileShareHandler);
+
 
                 fileListHandler->listAllFiles(1);
             }

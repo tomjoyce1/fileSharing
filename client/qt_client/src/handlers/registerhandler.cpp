@@ -3,6 +3,7 @@
 #include <QMetaObject>
 #include <nlohmann/json.hpp>
 #include "../utils/networking/HttpResponse.h"
+#include "../utils/networking/asiosslclient.h"
 
 RegisterHandler::RegisterHandler(ClientStore *store, QObject *parent)
     : QObject(parent),
@@ -41,16 +42,16 @@ void RegisterHandler::registerUser(const QString &username,
 
 void RegisterHandler::doRegister(QString username, QString password)
 {
-    /* ❶  Create the KeyBundle (X25519, Ed25519, Dilithium-5) */
+    /* Create the KeyBundle (X25519, Ed25519, Dilithium-5) */
     KeyBundle kb;
 
-    /* ❷  Build JSON body using nlohmann::json */
+    /* Build JSON body using nlohmann::json */
     nlohmann::json j;
     j["username"]   = username.toStdString();
     j["key_bundle"] = kb.toJsonPublic();
     std::string bodyString = j.dump();
 
-    /* ❸  Build HTTP request—but do NOT supply a “Host” header here.
+    /* Build HTTP request—but do NOT supply a “Host” header here.
             HttpRequest::toString() will auto-inject it from Config::instance(). */
     HttpRequest req(
         HttpRequest::Method::POST,
@@ -62,14 +63,13 @@ void RegisterHandler::doRegister(QString username, QString password)
         }
         );
 
-    /* ❹  Send synchronously using the new overload.  No need to pass host/port. */
-    AsioHttpClient httpClient;
-    httpClient.init(""); // no TLS
+    /* Send synchronously using the new overload.  No need to pass host/port. */
+    AsioSslClient httpClient; // 🔒 HTTPS
 
     // This version of sendRequest(...) pulls host/port from Config::instance():
     HttpResponse resp = httpClient.sendRequest(req);
 
-    /* ❺  Interpret server response */
+    /* Interpret server response */
     QString title, msg;
     if (resp.statusCode == 201) {
         // Server says “Created”.  Now store the new user in our encrypted ClientStore.
@@ -99,7 +99,7 @@ void RegisterHandler::doRegister(QString username, QString password)
 
     qDebug().nospace() << "[registerhandler] piss2";
 
-    /* ❻  Emit result back on the UI thread */
+    /* Emit result back on the UI thread */
     QMetaObject::invokeMethod(
         this,
         [this, title, msg]() {

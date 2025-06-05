@@ -43,7 +43,7 @@ std::string HttpRequest::toString() const
     bool haveCL  = false;
     bool haveHost = false;
 
-    // 1) user‐supplied headers
+    // user‐supplied headers
     for (const auto& kv : headers_) {
         std::string keyLower = kv.first;
         std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
@@ -54,17 +54,17 @@ std::string HttpRequest::toString() const
         req += kv.first + ": " + kv.second + "\r\n";
     }
 
-    // 2) Implicit Content-Type for JSON if body is nonempty
+    // Implicit Content-Type for JSON if body is nonempty
     if (!haveCT && !body_.empty()) {
         req += "Content-Type: application/json\r\n";
     }
 
-    // 3) Implicit Content-Length if body is nonempty
+    // Implicit Content-Length if body is nonempty
     if (!haveCL && !body_.empty()) {
         req += "Content-Length: " + std::to_string(body_.size()) + "\r\n";
     }
 
-    // 4) Implicit Host from Config if missing
+    // Implicit Host from Config if missing
     if (!haveHost) {
         auto& cfg = Config::instance();
         req += "Host: " + cfg.serverHost + ":" + std::to_string(cfg.serverPort) + "\r\n";

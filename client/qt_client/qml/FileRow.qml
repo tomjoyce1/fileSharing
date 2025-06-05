@@ -37,25 +37,15 @@ Item {
         }
     }
 
-    // ------------------------------------------------
-    // These data properties come from FileTable.delegate
-    // ------------------------------------------------
     property int fileId: -1
     property alias fileName: nameLabel.text
     property alias fileSize: sizeLabel.text
 
-    // ------------------------------------------------
-        // These signals must exist so FileTable.qml can bind to them:
-        //   onDownloadRequested, onShareRequested, onDeleteRequested, onRevokeRequested
-        // ------------------------------------------------
         signal downloadRequested(int fileId)
         signal shareRequested(int fileId, string shareToUser)
         signal deleteRequested(int fileId)
         signal revokeRequested(int fileId, string revokeFromUser)
 
-        // ------------------------------------------------
-        // Hover‐highlight background
-        // ------------------------------------------------
         Rectangle {
             anchors.fill: parent
             radius: 4
@@ -143,11 +133,7 @@ Item {
                 text: qsTr("Share")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: {
-                           shareRequested(root.fileId, shareField.text)
-                           shareField.text = ""
-                           shareDialog.close()
-                       }
+                onClicked: shareDialog.open()
 
                 background: Rectangle {
                     anchors.fill: parent
@@ -217,9 +203,6 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-
-            // Key change: do NOT accept any button clicks here.
-            // This allows child Buttons to receive clicks normally.
             acceptedButtons: Qt.NoButton
         }
 
@@ -282,7 +265,8 @@ Item {
                     // Subtract spacing to split field width equally
                     Layout.preferredWidth: (shareField.width - 12) / 2
                     onClicked: {
-                        shareRequested(shareField.text)
+                        if (shareField.text.length === 0) return;
+                        shareHandler.shareFile(root.fileId, shareField.text)
                         shareField.text = ""
                         shareDialog.close()
                     }

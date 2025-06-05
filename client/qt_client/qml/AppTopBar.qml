@@ -52,16 +52,114 @@ Rectangle {
         // spacer
         Item { Layout.fillWidth: true }
 
-        // — Settings button —
         ToolButton {
+            id: settingsButton
             icon.name: "settings"
             Layout.preferredWidth: 40
             Layout.preferredHeight: 40
+
             background: Rectangle {
                 anchors.fill: parent
-                radius: width/2
+                radius: width / 2
                 color: "white"
             }
+
+            /* ⇨ open the dialog */
+            onClicked: settingsDialog.open()
         }
+
+        Dialog {
+                    id: settingsDialog
+                    modal: true
+                    standardButtons: Dialog.NoButton
+                    width: 320
+                    implicitHeight: contentItem.implicitHeight + 32
+
+                    background: Rectangle {
+                        anchors.fill: parent
+                        color: "white"
+                        radius: 12
+                    }
+
+                    contentItem: ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 24
+                        spacing: 16
+
+                        /* Title */
+                        Label {
+                            text: qsTr("User Settings")
+                            font.pixelSize: 20
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        /* ─── New Password Field ─── */
+                        TextField {
+                            id: newPasswordField
+                            placeholderText: qsTr("New Password")
+                            echoMode: TextInput.Password
+                            Layout.fillWidth: true
+                            height: 40
+                            font.pixelSize: 14
+
+                            background: Rectangle {
+                                anchors.fill: parent
+                                color: "#F5F5F5"
+                                radius: 6
+                                border.color: "#CCCCCC"
+                                border.width: 1
+                            }
+                            padding: 8
+                        }
+
+                        /* ─── Confirm New Password Field ─── */
+                        TextField {
+                            id: confirmPasswordField
+                            placeholderText: qsTr("Confirm Password")
+                            echoMode: TextInput.Password
+                            Layout.fillWidth: true
+                            height: 40
+                            font.pixelSize: 14
+
+                            background: Rectangle {
+                                anchors.fill: parent
+                                color: "#F5F5F5"
+                                radius: 6
+                                border.color: "#CCCCCC"
+                                border.width: 1
+                            }
+                            padding: 8
+                        }
+
+                        /* ─── Change Password Button ─── */
+                        Button {
+                            text: qsTr("Change Password")
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+
+                            onClicked: {
+                                settingsDialog.close()
+                                passwordHandler.changePassword(
+                                    newPasswordField.text,          // newPwd
+                                    confirmPasswordField.text       // confirmPwd
+                                )
+                            }
+
+                            background: Rectangle {
+                                anchors.fill: parent
+                                radius: height / 2
+                                color: Material.color(Material.Indigo, Material.Shade400)
+                            }
+                            contentItem: Label {
+                                text: parent.text
+                                color: "white"
+                                font.pixelSize: 14
+                                anchors.centerIn: parent
+                            }
+                        }
+                    }
+                }
+
     }
 }

@@ -6,6 +6,8 @@
 #include <sstream>
 #include <system_error>
 #include <fstream>
+#include "../utils/networking/asiosslclient.h"
+#include "../config.h"
 
 
 // Static helper to convert a byte‐vector into lowercase hex
@@ -224,8 +226,7 @@ uint64_t FileUploadHandler::processSingleFile(const std::string& localPath)
     // Build request (no need to add Host manually; toString() will do it)
     HttpRequest req(HttpRequest::Method::POST, "/api/fs/upload", bodyString, headers);
 
-    AsioHttpClient client;
-    client.init("");
+    AsioSslClient client;
     HttpResponse resp = client.sendRequest(req);   // uses Config::instance().serverHost/port
 
     qDebug() << "[CLIENT]" << "→ HTTP status code =" << resp.statusCode;

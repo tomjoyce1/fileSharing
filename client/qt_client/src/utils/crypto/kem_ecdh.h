@@ -31,7 +31,7 @@ public:
     Encaps encap(const std::vector<uint8_t>& peerPk) const override;
     std::vector<uint8_t> decap(const std::vector<uint8_t>& ciphertext) const override;
 
-    // ← NEW: expose X25519 secret‐key as a 32‐byte vector
+    // expose X25519 secret‐key as a 32‐byte vector
     std::vector<uint8_t> getSecretKey() const {
         return std::vector<uint8_t>(_sk, _sk + crypto_scalarmult_SCALARBYTES);
     }

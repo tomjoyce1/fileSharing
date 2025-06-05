@@ -94,12 +94,6 @@ Item {
                     console.warn("downloadHandler is undefined—cannot call downloadFile()");
                 }
             }
-
-            onShareRequested: {
-                console.log("QML → shareRequested(" + fileId + ", " + arguments[1] + ")")
-                // arguments[1] is the username typed into the dialog
-                // call fileListHandler.shareFile(fileId, arguments[1]) or whatever method you wrote
-            }
             onDeleteRequested: {
                 console.log("QML → deleteRequested(" + fileId + ")")
                 fileListHandler.deleteFile(fileId)
