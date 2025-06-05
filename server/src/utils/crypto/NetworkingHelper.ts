@@ -190,21 +190,6 @@ export async function createSignedGET(
   return fetch(signedRequest);
 }
 
-function logSigDebug(label: string, data: any) {
-  try {
-    const logFilePath = "sig-debug.log";
-    if (!existsSync(logFilePath)) {
-      writeFileSync(logFilePath, "", { flag: "w" });
-    }
-    appendFileSync(
-      logFilePath,
-      `[${new Date().toISOString()}] ${label}: ${
-        typeof data === "string" ? data : JSON.stringify(data, null, 2)
-      }\n`
-    );
-  } catch {}
-}
-
 async function verifyRequestSignature(
   request: Request,
   publicBundle: KeyBundlePublic,
@@ -226,7 +211,6 @@ async function verifyRequestSignature(
   if (!signatures) {
     return null;
   }
-
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
 

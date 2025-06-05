@@ -43,10 +43,6 @@ export function encryptFileContent(
     encrypted_data.set(encrypted2, encrypted1.length);
 
     // Log details of the encryption process
-    console.log("[Debug] Encrypting file content:", {
-      contentLength: content.length,
-      fek: Buffer.from(fek).toString("base64"),
-    });
 
     return ok({
       encrypted_data,
@@ -108,10 +104,6 @@ function encryptMetadata(
     encrypted_data.set(encrypted2, encrypted1.length);
 
     // Log details of the encryption process
-    console.log("[Debug] Encrypting metadata:", {
-      metadataLength: JSON.stringify(metadata).length,
-      mek: Buffer.from(mek).toString("base64"),
-    });
 
     return ok({
       encrypted_data,

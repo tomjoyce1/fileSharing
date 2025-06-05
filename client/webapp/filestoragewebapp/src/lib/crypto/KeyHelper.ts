@@ -110,11 +110,7 @@ export function deserializeKeyBundlePublic(
     "base64"
   );
 
-  console.log("Decoded KEM Key Buffer:", kemKeyBuffer);
-  console.log("Decoded Signing Key Buffer:", signingKeyBuffer);
-  console.log("KEM Key Buffer Length:", kemKeyBuffer.length);
-  console.log("Signing Key Buffer Length:", signingKeyBuffer.length);
-
+ 
   return {
     preQuantum: {
       identityKemPublicKey: new Uint8Array(kemKeyBuffer),

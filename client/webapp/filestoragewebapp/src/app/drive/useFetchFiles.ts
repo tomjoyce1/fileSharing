@@ -50,8 +50,7 @@ export async function fetchFiles(
       "X-Signature-PostQuantum": postQuantumSig,
     };
     // Log canonical string and file content for debugging
-    console.log("[Debug] Frontend Canonical String:", canonicalString.substring(0, 200));
-    console.log("[Debug] Frontend Request Body:", bodyString.substring(0, 200));
+
     const response = await fetch("/api/fs/list", {
       method: "POST",
       headers,
@@ -70,7 +69,7 @@ export async function fetchFiles(
     setHasNextPage(hasNextPage);
     setError(null);
 
-    console.log("[Debug]frontend final big one Canonical String:", canonicalString);
+
 
   } catch (err) {
     setError(err instanceof Error ? err.message : "Failed to fetch files");
