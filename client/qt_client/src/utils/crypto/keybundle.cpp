@@ -241,50 +241,39 @@ nlohmann::json KeyBundle::toJsonPrivate() const {
 //───────────────────────────────────────────────────────────────────────────────
 //  fromJson(...)  ← parse only public keys (e.g. after you `toJson()`)
 //───────────────────────────────────────────────────────────────────────────────
-KeyBundle KeyBundle::fromJson(const std::string& jsonStr) {
-    // Exactly reverse what toJson() did (pull only pub fields).
-    // This is nearly identical to your old version.
-    auto extractField = [&](const std::string& keyName) -> std::string {
-        std::string pattern = "\"" + keyName + "\"";
-        size_t pos = jsonStr.find(pattern);
-        if (pos == std::string::npos) {
-            throw std::invalid_argument("KeyBundle::fromJson: missing field \"" + keyName + "\"");
-        }
-        pos = jsonStr.find(':', pos + pattern.size());
-        if (pos == std::string::npos) {
-            throw std::invalid_argument("KeyBundle::fromJson: malformed JSON near \"" + keyName + "\"");
-        }
-        pos++;
-        while (pos < jsonStr.size() && std::isspace((unsigned char)jsonStr[pos])) {
-            pos++;
-        }
-        if (pos >= jsonStr.size() || jsonStr[pos]!='"') {
-            throw std::invalid_argument("KeyBundle::fromJson: expected '\"' after field \"" + keyName + "\"");
-        }
-        pos++;
-        size_t start = pos;
-        while (pos < jsonStr.size() && jsonStr[pos]!='"') {
-            pos++;
-        }
-        if (pos>=jsonStr.size()) {
-            throw std::invalid_argument("KeyBundle::fromJson: unterminated string for \"" + keyName + "\"");
-        }
-        return jsonStr.substr(start, pos - start);
-    };
+// KeyBundle.cpp  (in place of the old fromJson(...) implementation)
+KeyBundle KeyBundle::fromJson(const std::string& jsonStr)
+{
+    auto j = nlohmann::json::parse(jsonStr);
 
-    std::string x25519_b64    = extractField("identityKemPublicKey");
-    std::string ed25519_b64   = extractField("identitySigningPublicKey");
-    std::string dilithium_b64 = extractField("identitySigningPublicKey");
-    // (Note: In the JSON, the two identitySigningPublicKey fields appear under different parents,
-    //  but this helper will need to be more robust if the field names repeat. For now, assume
-    //  the `extractField` usage is distinct.)
+    const auto& preQ  = j.at("preQuantum");
+    const auto& postQ = j.at("postQuantum");
 
-    std::vector<uint8_t> x25519Bytes  = fromBase64(x25519_b64, "x25519");
-    std::vector<uint8_t> ed25519Bytes = fromBase64(ed25519_b64, "ed25519");
-    std::vector<uint8_t> dilithiumBytes = fromBase64(dilithium_b64, "dilithium");
+    // ----- X25519 -----------------------------------------------------------
+    std::vector<uint8_t> xDer  =
+        fromBase64(preQ.at("identityKemPublicKey")
+                       .get<std::string>(), "x25519 DER");
+    if (xDer.size() != 44)
+        throw std::invalid_argument("X25519 SPKI must be 44 bytes");
+    std::vector<uint8_t> xRaw = der::parseX25519Spki(xDer);
 
-    // We do not know the private keys here, so we pass empty vectors:
-    return KeyBundle(x25519Bytes, ed25519Bytes, dilithiumBytes);
+    // ----- Ed25519 ----------------------------------------------------------
+    std::vector<uint8_t> eDer  =
+        fromBase64(preQ.at("identitySigningPublicKey")
+                       .get<std::string>(), "ed25519 DER");
+    if (eDer.size() != 44)
+        throw std::invalid_argument("Ed25519 SPKI must be 44 bytes");
+    std::vector<uint8_t> eRaw = der::parseEd25519Spki(eDer);
+
+    // ----- Dilithium-5 ------------------------------------------------------
+    std::vector<uint8_t> dRaw  =
+        fromBase64(postQ.at("identitySigningPublicKey")
+                       .get<std::string>(), "dilithium raw");
+    if (dRaw.empty())
+        throw std::invalid_argument("Dilithium public key missing");
+
+    // We only have public parts here
+    return KeyBundle(xRaw, eRaw, dRaw);
 }
 
 
