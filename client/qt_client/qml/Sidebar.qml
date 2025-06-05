@@ -29,9 +29,9 @@ Rectangle {
         // — Nav data —
         ListModel {
             id: navModel
-            ListElement { iconCode: "\uE2C8"; labelText: qsTr("All files") }
-            ListElement { iconCode: "\uE7FD"; labelText: qsTr("My files") }
-            ListElement { iconCode: "\uE7EF"; labelText: qsTr("Shared with me") }
+            ListElement { iconCode: "\ue2c8"; labelText: qsTr("All files") }
+            ListElement { iconCode: "\ue815"; labelText: qsTr("My files") }
+            ListElement { iconCode: "\ue2c9"; labelText: qsTr("Shared with me") }
         }
 
         Repeater {
@@ -52,7 +52,6 @@ Rectangle {
                     spacing: 8
 
                     Label {
-                        font.family: materialIcons.name
                         font.pixelSize: 20
                         text: iconCode
                         color: navItem.hovered
@@ -95,22 +94,14 @@ Rectangle {
             }
         }
 
-        // FileUploadArea
-        FileUploadArea {
-            // signals: uploadRequested, cancelRequested…
-        }
-
-        // storage usage
-        Label {
-            text: qsTr("Storage used: 75%")
-            font.pixelSize: 14
-            color: Material.onSurfaceVariant
-            Layout.margins: 8
-        }
-        ProgressBar {
-            value: 0.75
+        // 4) Spacer → pushes buttons to the right edge
+        Item {
             Layout.fillWidth: true
         }
+
+
+        // FileUploadArea
+        FileUploadArea {}
     }
 
     // — Listen for filesLoaded and errorOccurred from C++ —

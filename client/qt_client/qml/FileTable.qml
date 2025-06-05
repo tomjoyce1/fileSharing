@@ -1,55 +1,105 @@
 // FileTable.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Controls.Material
+import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
 
 Item {
     id: root
-    property ListModel model
+    width:  "parent" in root ? root.parent.width : 640
+    height: "parent" in root ? root.parent.height : 480
 
+    // ─────────────────────────────────────────
+    // Our dynamic ListModel, cleared + repopulated on filesLoaded(...)
+    // ─────────────────────────────────────────
+    ListModel {
+        id: fileModel
+        // Each element will hold:
+        //    file_id  (int)
+        //    name     (string)
+        //    size     (string)
+        //    modified (QDateTime as string, or displayable text)
+        //    is_owner (bool)
+        //    is_shared (bool)
+        //    shared_from (string)
+    }
 
-    Layout.fillWidth: true
-    Layout.fillHeight: true
+    // ─────────────────────────────────────────
+    // Listen for the C++ signal “filesLoaded” and update `fileModel`
+    // ─────────────────────────────────────────
+    Connections {
+        target: fileListHandler   // fileListHandler was registered in main.cpp
+        onFilesLoaded: {
+            fileModel.clear()
+            for (var i = 0; i < decryptedFiles.length; ++i) {
+                var f = decryptedFiles[i]
+                // decryptedFiles[i] is a QVariantMap with keys:
+                //   file_id, filename, size, modified (QDateTime), is_owner, is_shared, shared_from
+                fileModel.append({
+                    "file_id":    f.file_id,
+                    "name":       f.filename,
+                    "size":       f.size,
+                    "modified":   f.modified.toString(Qt.ISODate),
+                                 // or format as you like
+                    "is_owner":   f.is_owner,
+                    "is_shared":  f.is_shared,
+                    "shared_from":f.shared_from
+                })
+            }
+        }
+        onErrorOccurred: {
+            // If you want to show an error popup:
+            console.error("Error retrieving file list: " + message)
+        }
+    }
 
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 0
-
-        // — Header Row —
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.margins: 8
-            spacing: 12
-
-            Label { text: qsTr("Name");     font.bold: true; Layout.preferredWidth: 280; horizontalAlignment: Text.AlignLeft;  verticalAlignment: Text.AlignVCenter }
-            Label { text: qsTr("Size");     font.bold: true; Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
-            Label { text: qsTr("Modified"); font.bold: true; Layout.preferredWidth: 140; horizontalAlignment: Text.AlignLeft;  verticalAlignment: Text.AlignVCenter }
-            Label { text: qsTr("Shared");   font.bold: true; Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter }
-
-            Item { Layout.fillWidth: true }
-            Item { Layout.preferredWidth: 96 }  // for the 3 action icons
+    Text {
+            id: noFilesText
+            text: qsTr("No Files")
+            font.pixelSize: 18
+            color: "#666666"
+            anchors.centerIn: parent
+            visible: fileModel.count === 0
         }
 
-        // — Rows —
-        ListView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
+    // ─────────────────────────────────────────
+    // ListView that uses our “fileModel” and FileRow delegate
+    // ─────────────────────────────────────────
+    ListView {
+        id: fileListView
+        anchors.fill: parent
+        spacing: 2
+        model: fileModel
+        clip: true
 
-            model: root.model
-            spacing: 2
+        delegate: FileRow {
+            fileId: file_id             // pass model’s file_id into FileRow.fileId
+            fileName: name              // model.name
+            fileSize: size              // model.size
 
-            delegate: FileRow {
+            // Wire up the row’s signals to C++ (or JS) slots:
+            onDownloadRequested: function(theFileId) {
+                console.log("QML → downloadRequested(", theFileId, ")");
+                console.log("downloadHandler is:", downloadHandler);
+                if (downloadHandler) {
+                    downloadHandler.downloadFile(theFileId);
+                } else {
+                    console.warn("downloadHandler is undefined—cannot call downloadFile()");
+                }
+            }
 
-                fileName:   name
-                fileSize:   size
-                modified:   modified
-                sharedTo:   sharedTo
-
-                onDownloadRequested: console.log("Download", name)
-                onShareRequested:    console.log("Share", name)
-                onMenuRequested:     console.log("Menu", name)
+            onShareRequested: {
+                console.log("QML → shareRequested(" + fileId + ", " + arguments[1] + ")")
+                // arguments[1] is the username typed into the dialog
+                // call fileListHandler.shareFile(fileId, arguments[1]) or whatever method you wrote
+            }
+            onDeleteRequested: {
+                console.log("QML → deleteRequested(" + fileId + ")")
+                fileListHandler.deleteFile(fileId)
+            }
+            onRevokeRequested: {
+                console.log("QML → revokeRequested(" + fileId + ", " + arguments[1] + ")")
+                fileListHandler.revokeFile(fileId, arguments[1])
             }
         }
     }

@@ -63,18 +63,5 @@ Rectangle {
                 color: "white"
             }
         }
-
-        // — Avatar button (stub) —
-        // swap "avatar.png" for your real path
-        Rectangle {
-            width: 40; height: 40; radius: 20
-            color: "white"
-            Image {
-                anchors.fill: parent
-                anchors.margins: 2
-                fillMode: Image.PreserveAspectCrop
-                source: "qrc:/icons/avatar.png"
-            }
-        }
     }
 }
