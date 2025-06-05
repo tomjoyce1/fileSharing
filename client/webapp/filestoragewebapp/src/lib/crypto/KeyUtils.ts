@@ -16,11 +16,18 @@ export class KeyError extends Error {
 // Connection pool for IndexedDB
 let dbConnection: IDBDatabase | null = null;
 let dbConnectionPromise: Promise<IDBDatabase> | null = null;
+let isClosing = false;
 
 /**
  * Opens or creates the IndexedDB database for key storage
  */
 export async function openKeyDB(): Promise<IDBDatabase> {
+  // If we're in the process of closing, wait for it to complete
+  if (isClosing) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return openKeyDB();
+  }
+
   // If we already have a connection, return it
   if (dbConnection) {
     return dbConnection;
@@ -36,30 +43,25 @@ export async function openKeyDB(): Promise<IDBDatabase> {
     try {
       const dbName = "DriveKeysDB";
       const dbVersion = 2;
-      console.log(`[KeyUtils] openKeyDB: Opening IndexedDB dbName=${dbName}, dbVersion=${dbVersion}`);
       const request = indexedDB.open(dbName, dbVersion);
 
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains("keys")) {
           db.createObjectStore("keys");
-          console.log(`[KeyUtils] openKeyDB: Created object store 'keys' in dbName=${dbName}`);
         }
       };
 
       request.onsuccess = () => {
-        console.log(`[KeyUtils] openKeyDB: Successfully opened dbName=${dbName}`);
         dbConnection = request.result;
         resolve(dbConnection);
       };
 
       request.onerror = (event) => {
         const error = event.target as IDBRequest | null;
-        console.error(`[KeyUtils] openKeyDB: Failed to open dbName=${dbName}`, request.error);
         reject(new KeyError("Failed to open database", request.error as Error));
       };
     } catch (err) {
-      console.error(`[KeyUtils] openKeyDB: Exception thrown`, err);
       reject(new KeyError("Failed to initialize database", err as Error));
     }
   });
@@ -71,11 +73,43 @@ export async function openKeyDB(): Promise<IDBDatabase> {
  * Close the IndexedDB connection
  */
 export async function closeKeyDB(): Promise<void> {
-  if (dbConnection) {
+  if (!dbConnection) return;
+
+  isClosing = true;
+  try {
     dbConnection.close();
+  } finally {
     dbConnection = null;
     dbConnectionPromise = null;
+    isClosing = false;
   }
+}
+
+/**
+ * Execute a database operation with retry logic
+ */
+async function executeDBOperation<T>(
+  operation: (db: IDBDatabase) => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const db = await openKeyDB();
+      return await operation(db);
+    } catch (error) {
+      lastError = error as Error;
+      if (error instanceof Error && error.message.includes("database connection is closing")) {
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  
+  throw lastError || new Error("Failed to execute database operation");
 }
 
 /**
@@ -89,36 +123,18 @@ export async function saveKeyToIndexedDB(
   if (!(keyData instanceof Uint8Array)) {
     throw new KeyError(`Invalid key data type: ${typeof keyData}`);
   }
-  // NOTE: For real password-based encryption, use a proper KDF and encrypt the key before storage.
-  try {
-    await sodium.ready;
-    const db = await openKeyDB();
+  
+  return executeDBOperation(async (db) => {
     return new Promise<void>((resolve, reject) => {
-      console.log(`[KeyUtils] saveKeyToIndexedDB: Saving keyName=${keyName}, dataLen=${keyData.length}`);
       const tx = db.transaction("keys", "readwrite");
       const store = tx.objectStore("keys");
       const request = store.put(keyData, keyName);
-      request.onsuccess = () => {
-        console.log(`[KeyUtils] saveKeyToIndexedDB: Successfully saved keyName=${keyName}`);
-        resolve();
-      };
-      request.onerror = () => {
-        console.error(`[KeyUtils] saveKeyToIndexedDB: Failed to save keyName=${keyName}`, request.error);
-        reject(new KeyError("Failed to save key", request.error as Error));
-      };
-      tx.oncomplete = () => {
-        db.close();
-        console.log(`[KeyUtils] saveKeyToIndexedDB: Transaction complete, db closed`);
-      };
-      tx.onerror = () => {
-        console.error(`[KeyUtils] saveKeyToIndexedDB: Transaction failed`, tx.error);
-        reject(new KeyError("Transaction failed", tx.error as Error));
-      };
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(new KeyError("Failed to save key", request.error as Error));
+      tx.onerror = () => reject(new KeyError("Transaction failed", tx.error as Error));
     });
-  } catch (err) {
-    console.error(`[KeyUtils] saveKeyToIndexedDB: Exception thrown`, err);
-    throw new KeyError("Failed to save key to IndexedDB", err as Error);
-  }
+  });
 }
 
 /**
@@ -128,33 +144,25 @@ export async function getKeyFromIndexedDB(
   keyName: string,
   password: string
 ): Promise<Uint8Array | null> {
-  try {
-    const db = await openKeyDB();
+  return executeDBOperation(async (db) => {
     return new Promise<Uint8Array | null>((resolve, reject) => {
-      console.log(`[KeyUtils] getKeyFromIndexedDB: Looking for keyName=${keyName}`);
       const tx = db.transaction("keys", "readonly");
       const store = tx.objectStore("keys");
       const request = store.get(keyName);
+      
       request.onsuccess = async () => {
         const storedKey = request.result;
         if (storedKey instanceof Uint8Array) {
-          // NOTE: For real password-based encryption, decrypt the key here using the password.
           resolve(storedKey);
         } else {
           resolve(null);
         }
       };
-      request.onerror = () => {
-        reject(new KeyError("Failed to retrieve key", request.error as Error));
-      };
-      tx.oncomplete = () => {
-        db.close();
-      };
+      
+      request.onerror = () => reject(new KeyError("Failed to retrieve key", request.error as Error));
+      tx.onerror = () => reject(new KeyError("Transaction failed", tx.error as Error));
     });
-  } catch (err) {
-    console.error(`[KeyUtils] getKeyFromIndexedDB: Exception thrown`, err);
-    throw new KeyError("Failed to retrieve key from IndexedDB", err as Error);
-  }
+  });
 }
 
 /**
@@ -241,15 +249,16 @@ export async function saveObjectToIndexedDB(
   keyName: string,
   obj: any
 ): Promise<void> {
-  const db = await openKeyDB();
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction("keys", "readwrite");
-    const store = tx.objectStore("keys");
-    const request = store.put(obj, keyName);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
-    tx.onerror = () => reject(tx.error);
+  return executeDBOperation(async (db) => {
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("keys", "readwrite");
+      const store = tx.objectStore("keys");
+      const request = store.put(obj, keyName);
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
   });
 }
 
@@ -259,14 +268,15 @@ export async function saveObjectToIndexedDB(
 export async function getObjectFromIndexedDB(
   keyName: string
 ): Promise<any | null> {
-  const db = await openKeyDB();
-  return new Promise<any | null>((resolve, reject) => {
-    const tx = db.transaction("keys", "readonly");
-    const store = tx.objectStore("keys");
-    const request = store.get(keyName);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
-    tx.onerror = () => reject(tx.error);
+  return executeDBOperation(async (db) => {
+    return new Promise<any | null>((resolve, reject) => {
+      const tx = db.transaction("keys", "readonly");
+      const store = tx.objectStore("keys");
+      const request = store.get(keyName);
+      
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
   });
 }

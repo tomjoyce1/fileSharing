@@ -392,7 +392,7 @@ export default function DriveList({
       const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
       const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
       if (!ed25519Priv || !mldsaPriv) {
-        console.log('Failed to load private keys for revoke operation', { username });
+ 
         throw new Error('Could not load your private keys. Please log in again.');
       }
       
@@ -414,8 +414,7 @@ export default function DriveList({
         privateKeyBundle
       );
       
-      console.log('Sending revoke request to server');
-      const res = await fetch('/api/fs/revoke', {
+       const res = await fetch('/api/fs/revoke', {
         method: 'POST',
         headers,
         body: bodyString
@@ -423,27 +422,15 @@ export default function DriveList({
       
       if (!res.ok) {
         const errText = await res.text();
-        console.log('Revoke access request failed', { 
-          fileId: item.id, 
-          usernameToRevoke: usernameToRevoke.trim(),
-          status: res.status,
-          error: errText 
-        });
+         
         setError('Failed to revoke access: ' + errText);
         return;
       }
       
-      console.log('Access revoked successfully', { 
-        fileId: item.id, 
-        usernameToRevoke: usernameToRevoke.trim() 
-      });
+  
       alert('Access revoked for user: ' + usernameToRevoke.trim());
     } catch (err) {
-      console.log('Revoke access operation failed', { 
-        fileId: item.id, 
-        usernameToRevoke: usernameToRevoke.trim(),
-        error: err instanceof Error ? err.message : String(err)
-      });
+      
       setError('Failed to revoke access: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
