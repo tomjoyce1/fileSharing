@@ -290,10 +290,17 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
         if (!pubkeyBundleStr) {
           // If not in IndexedDB, try to fetch from server
           console.log('Public key bundle not found in IndexedDB, fetching from server');
+          const { headers, body: bodyString } = createAuthenticatedRequest(
+            'POST',
+            '/api/keyhandler/getbundle',
+            { username: ownerUsername },
+            username,
+            privateKeyBundle
+          );
           const response = await fetch(`/api/keyhandler/getbundle`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: ownerUsername })
+            headers,
+            body: bodyString
           });
           if (!response.ok) {
             throw new Error('Failed to fetch owner\'s public key bundle');

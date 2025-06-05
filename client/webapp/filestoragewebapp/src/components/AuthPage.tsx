@@ -439,8 +439,6 @@ try {
   setLoading(false);
   return;
 }
-
-
           // After verifying the user, derive and set the KEK
           const saltArr = await getObjectFromIndexedDB(`${username}_kdf_salt`);
           if (!saltArr) throw new Error('Missing KDF salt');
