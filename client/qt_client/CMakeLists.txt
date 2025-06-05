@@ -132,6 +132,7 @@ add_executable(qt_client
     src/handlers/filelisthandler.h src/handlers/filelisthandler.cpp
     src/handlers/filedownloadhandler.h src/handlers/filedownloadhandler.cpp
     src/handlers/passwordchangehandler.h src/handlers/passwordchangehandler.cpp
+    src/handlers/filesharehandler.h src/handlers/filesharehandler.cpp
 )
 
 # ─────────────────────────────────────────────────────────────

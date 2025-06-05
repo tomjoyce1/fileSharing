@@ -94,10 +94,6 @@ Item {
                     console.warn("downloadHandler is undefined—cannot call downloadFile()");
                 }
             }
-
-            onShareRequested: {
-                console.log("QML → shareRequested(" + fileId + ", " + arguments[1] + ")")
-            }
             onDeleteRequested: {
                 console.log("QML → deleteRequested(" + fileId + ")")
                 fileListHandler.deleteFile(fileId)

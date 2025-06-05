@@ -11,6 +11,7 @@
 #include "handlers/FileListHandler.h"
 #include "handlers/filedownloadhandler.h"
 #include "handlers/passwordchangehandler.h"
+#include "handlers/filesharehandler.h"
 #include "utils/ClientStore.h"
 #include "utils/networking/asiosslclient.h"
 
@@ -50,6 +51,7 @@ int main(int argc, char *argv[])
     FileUploadHandler* uploadHandler   = nullptr;
     FileListHandler*   fileListHandler = nullptr;
     FileDownloadHandler* downloadHandler = nullptr;
+    FileShareHandler* fileShareHandler = nullptr;
 
     auto &cfg = Config::instance();
     QString absPem = QDir(QCoreApplication::applicationDirPath())
@@ -74,10 +76,12 @@ int main(int argc, char *argv[])
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
                 downloadHandler = new FileDownloadHandler(&clientStore);
+                fileShareHandler = new FileShareHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
                 engine.rootContext()->setContextProperty("downloadHandler", downloadHandler);
+                engine.rootContext()->setContextProperty("shareHandler", fileShareHandler);
 
                 fileListHandler->listAllFiles(1);
             }
@@ -99,10 +103,13 @@ int main(int argc, char *argv[])
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
                 downloadHandler = new FileDownloadHandler(&clientStore);
+                fileShareHandler = new FileShareHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
                 engine.rootContext()->setContextProperty("downloadHandler", downloadHandler);
+                engine.rootContext()->setContextProperty("shareHandler", fileShareHandler);
+
 
                 fileListHandler->listAllFiles(1);
             }

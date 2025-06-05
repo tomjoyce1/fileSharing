@@ -143,11 +143,7 @@ Item {
                 text: qsTr("Share")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: {
-                           shareRequested(root.fileId, shareField.text)
-                           shareField.text = ""
-                           shareDialog.close()
-                       }
+                onClicked: shareDialog.open()
 
                 background: Rectangle {
                     anchors.fill: parent
@@ -282,7 +278,9 @@ Item {
                     // Subtract spacing to split field width equally
                     Layout.preferredWidth: (shareField.width - 12) / 2
                     onClicked: {
-                        shareRequested(shareField.text)
+                        if (shareField.text.length === 0) return;
+                        /*  ↓ call C++ directly */
+                        shareHandler.shareFile(root.fileId, shareField.text)
                         shareField.text = ""
                         shareDialog.close()
                     }
