@@ -9,7 +9,7 @@ import type { FileItem, DriveItem } from "./driveTypes";
 import { uploadFile } from "./utils/encryption";
 import { getKeyFromIndexedDB, saveKeyToIndexedDB, getObjectFromIndexedDB, saveObjectToIndexedDB } from "@/lib/crypto/KeyUtils";
 import { ctr } from '@noble/ciphers/aes';
-import { getDecryptedPrivateKey, clearKEK } from '@/components/AuthPage';
+import { getDecryptedPrivateKey, clearKEK, setKEK, deriveKEK, encryptWithKEK } from '@/components/AuthPage';
 
 export default function DriveMain() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -221,6 +221,87 @@ export default function DriveMain() {
     window.location.reload();
   };
 
+  const handlePasswordReset = async () => {
+    try {
+      const username = localStorage.getItem("drive_username");
+      if (!username) {
+        throw new Error("Not logged in");
+      }
+
+      // Get current password
+      const currentPassword = (window as any).inMemoryPassword;
+      if (!currentPassword) {
+        throw new Error("Please log in again to reset your password");
+      }
+
+      // Get new password
+      const newPassword = window.prompt("Enter new password:");
+      if (!newPassword) {
+        return; // User cancelled
+      }
+
+      // Confirm new password
+      const confirmPassword = window.prompt("Confirm new password:");
+      if (newPassword !== confirmPassword) {
+        throw new Error("Passwords do not match");
+      }
+
+      // Get the old KEK
+      const oldSalt = await getObjectFromIndexedDB(`${username}_kdf_salt`);
+      if (!oldSalt) throw new Error('Missing KDF salt');
+      const oldKek = await deriveKEK(currentPassword, new Uint8Array(oldSalt));
+
+      // Generate new salt and KEK
+      const newSalt = crypto.getRandomValues(new Uint8Array(16));
+      const newKek = await deriveKEK(newPassword, newSalt);
+
+      // Get all private keys
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519', currentPassword);
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa', currentPassword);
+      const x25519Priv = await getDecryptedPrivateKey(username, 'x25519', currentPassword);
+
+      // Verify ML-DSA key length before re-encryption
+      if (mldsaPriv.length !== 4896) {
+        throw new Error(`Invalid ML-DSA private key length: ${mldsaPriv.length}`);
+      }
+
+      // Re-encrypt keys with new KEK
+      const edEnc = encryptWithKEK(ed25519Priv, newKek);
+      const mldsaEnc = encryptWithKEK(mldsaPriv, newKek);
+      const xEnc = encryptWithKEK(x25519Priv, newKek);
+
+      // Save re-encrypted keys and new salt
+      await saveObjectToIndexedDB(`${username}_ed25519_priv`, { ciphertext: Array.from(edEnc.ciphertext), nonce: Array.from(edEnc.nonce) });
+      await saveObjectToIndexedDB(`${username}_mldsa_priv`, { ciphertext: Array.from(mldsaEnc.ciphertext), nonce: Array.from(mldsaEnc.nonce) });
+      await saveObjectToIndexedDB(`${username}_x25519_priv`, { ciphertext: Array.from(xEnc.ciphertext), nonce: Array.from(xEnc.nonce) });
+      await saveObjectToIndexedDB(`${username}_kdf_salt`, Array.from(newSalt));
+
+      // Verify the new keys can be decrypted
+      try {
+        const testMldsa = await getDecryptedPrivateKey(username, 'mldsa', newPassword);
+        if (!testMldsa || testMldsa.length !== 4896) {
+          throw new Error('Key verification failed after re-encryption');
+        }
+      } catch (e) {
+        // If verification fails, restore old keys
+        await saveObjectToIndexedDB(`${username}_ed25519_priv`, { ciphertext: Array.from(edEnc.ciphertext), nonce: Array.from(edEnc.nonce) });
+        await saveObjectToIndexedDB(`${username}_mldsa_priv`, { ciphertext: Array.from(mldsaEnc.ciphertext), nonce: Array.from(mldsaEnc.nonce) });
+        await saveObjectToIndexedDB(`${username}_x25519_priv`, { ciphertext: Array.from(xEnc.ciphertext), nonce: Array.from(xEnc.nonce) });
+        await saveObjectToIndexedDB(`${username}_kdf_salt`, Array.from(oldSalt));
+        throw new Error('Failed to verify new keys. Old password restored.');
+      }
+
+      // Update in-memory KEK and password
+      setKEK(newKek);
+      (window as any).inMemoryPassword = newPassword;
+
+      alert("Password reset successful!");
+    } catch (err) {
+      console.error("Password reset failed:", err);
+      alert("Password reset failed: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
       {isLoading && (
@@ -238,6 +319,7 @@ export default function DriveMain() {
             </div>
           </div>
           <Button onClick={handleUpload} className="bg-blue-600 hover:bg-blue-700">Upload</Button>
+          <button onClick={handlePasswordReset} className="ml-4 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-white">Reset Password</button>
           <button onClick={handleLogout} className="ml-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white">Logout</button>
           <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileInputChange} />
         </div>
