@@ -132,9 +132,10 @@ void FileShareHandler::processShare(qulonglong fileId,
     {
         Symmetric::Ciphertext c;
         try {
+            /* encrypt with the *raw* shared-secret */
             c = Symmetric::encrypt(
                 std::vector<uint8_t>(key32.begin(), key32.end()),
-                shared
+                shared                     // <-- no SHA-256, just use it
                 );
         } catch (const std::exception& ex) {
             qWarning() << "[processShare] ERROR: Symmetric::encrypt() threw:"
@@ -144,12 +145,9 @@ void FileShareHandler::processShare(qulonglong fileId,
 
         outCtB64 = FileClientData::base64_encode(c.data.data(), c.data.size());
         outIvB64 = FileClientData::base64_encode(c.iv.data(),   c.iv.size());
-
-        qDebug() << "[processShare] Wrapped key (hex → B64):"
-                 << " ct(B64)=" << QString::fromStdString(outCtB64)
-                 << " iv(B64)=" << QString::fromStdString(outIvB64);
         return true;
     };
+
 
     std::string encFekB64, ivFekB64, encMekB64, ivMekB64;
     if (!wrapKey(fcd.fek, encFekB64, ivFekB64)) {

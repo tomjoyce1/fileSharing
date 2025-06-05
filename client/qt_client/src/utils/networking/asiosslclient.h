@@ -25,15 +25,15 @@ public:
                              int timeoutSeconds = DEFAULT_TIMEOUT) override;
 
 private:
-    std::shared_ptr<boost::asio::io_context>                   io_;
-    std::shared_ptr<boost::asio::ssl::context>         sslCtx_;
-    std::shared_ptr<boost::asio::ip::tcp::resolver>            resolver_;
+    std::shared_ptr<boost::asio::io_context> io_;
+    std::shared_ptr<boost::asio::ssl::context> sslCtx_;
+    std::shared_ptr<boost::asio::ip::tcp::resolver> resolver_;
     std::unique_ptr<boost::asio::ssl::stream<
-        boost::asio::ip::tcp::socket>>                         stream_;
+        boost::asio::ip::tcp::socket>> stream_;
 
-    static std::shared_ptr<boost::asio::ssl::context>          s_ctx_;
-    static std::vector<boost::asio::ip::tcp::endpoint>         s_cached_eps_;
-    static std::mutex                                          s_eps_mtx_;
+    static std::shared_ptr<boost::asio::ssl::context> s_ctx_;
+    static std::vector<boost::asio::ip::tcp::endpoint> s_cached_eps_;
+    static std::mutex s_eps_mtx_;
 
     /** tiny helper that prints & returns a 500 HttpResponse in one line */
     static HttpResponse makeError(const std::string& why);

@@ -6,6 +6,13 @@
 #include <QDebug>
 #include <map>
 
+static std::string first8(const std::vector<uint8_t>& v)
+{
+    char buf[17];
+    for (int i = 0; i < 8; ++i) sprintf(buf + 2*i, "%02x", v[i]);
+    buf[16] = 0;
+    return buf;
+}
 
 using json = nlohmann::json;
 
@@ -218,25 +225,59 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
     result.shared_from.clear();
 
     // Retrieve local FileClientData for this file_id
-    FileClientData* fcdPtr = m_store->getFileData(result.file_id);
-    if (fcdPtr == nullptr) {
-        qWarning() << "[FileList] No local FileClientData for file_id="
-                   << result.file_id;
-        return std::nullopt;
-    }
-    FileClientData fcd = *fcdPtr;  // copy the struct
+    FileClientData* fcd = m_store->getFileData(result.file_id);
 
     std::vector<uint8_t> finalMEK(32);
     std::vector<uint8_t> iv_metadata(16);
 
-    if (result.is_owner) {
-        // If we own the file, we already stored MEK + metadata_nonce in FileClientData
-        finalMEK    = std::vector<uint8_t>(fcd.mek.begin(), fcd.mek.end());
-        iv_metadata = std::vector<uint8_t>(fcd.metadata_nonce.begin(),
-                                           fcd.metadata_nonce.end());
+    if (result.is_owner)
+    {
+        /* we really need the local copy for owned files */
+        FileClientData* fcdPtr = m_store->getFileData(result.file_id);
+        if (!fcdPtr) {
+            qWarning() << "[FileList]    owner but no local keys for file_id="
+                       << result.file_id;
+            return std::nullopt;
+        }
+
+        finalMEK    = { fcdPtr->mek.begin(), fcdPtr->mek.end() };
+        iv_metadata = { fcdPtr->metadata_nonce.begin(),
+                       fcdPtr->metadata_nonce.end() };
     }
-    else {
-        // TODO: handle shared files
+    else                // ───── shared file path ─────
+    {
+        try {
+            // ❶  unwrap FEK / MEK with the shared-secret
+            auto [rawFEK, rawMEK] = unwrapKeysFromJson(singleFileJson,
+                                                       m_privBundle);
+
+            // ❷  IV that the sharer sent for the metadata blob
+            std::string ivB64 = singleFileJson["shared_access"]["metadata_nonce"]
+                                    .get<std::string>();
+            iv_metadata = FileClientData::base64_decode(ivB64);
+            if (iv_metadata.size() != FileClientData::PUBLIC_NONCE_LEN)
+                           throw std::runtime_error("metadata_nonce wrong length");
+
+                        finalMEK = std::move(rawMEK);
+
+                        /* optional – cache for later downloads */
+                       FileClientData cache(result.file_id);
+            cache.file_id = result.file_id;              // ctor that zeros
+            std::copy(rawMEK.begin(),  rawMEK.end(),  cache.mek.begin());
+            std::copy(rawFEK.begin(),  rawFEK.end(),  cache.fek.begin());
+            std::copy(iv_metadata.begin(), iv_metadata.end(),
+                      cache.metadata_nonce.begin());
+            m_store->upsertFileData(cache);
+
+            result.shared_from =
+                QString::fromStdString(
+                    singleFileJson["owner_username"].get<std::string>());
+        }
+        catch (const std::exception& ex) {
+            qWarning() << "[FileList] shared-file unwrap failed for file_id="
+                       << result.file_id << ":" << ex.what();
+            return std::nullopt;
+        }
     }
 
     // Base64‐decode “metadata” ciphertext, then AES-CTR‐decrypt with finalMEK + iv_metadata
@@ -271,6 +312,13 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
     }
 
     // Fill out filename + size
+    if (!metaJson.contains("filename") || !metaJson.contains("filesize")) {
+        qWarning() << "[FileList] metadata for file_id=" << result.file_id
+                   << "is missing filename / filesize – skipping.";
+        return std::nullopt;            // skip this entry instead of aborting
+    }
+
+
     result.filename   = QString::fromStdString(
         metaJson.at("filename").get<std::string>()
         );

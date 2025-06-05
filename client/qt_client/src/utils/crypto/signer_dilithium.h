@@ -15,7 +15,7 @@
  */
 class Signer_Dilithium : public Signer {
 public:
-    Signer_Dilithium();                       /* creates ML-DSA-87 context   */
+    Signer_Dilithium();
     ~Signer_Dilithium() override;
 
     // forbid copy, allow move
@@ -24,14 +24,14 @@ public:
     Signer_Dilithium(Signer_Dilithium&&)  noexcept       = default;
     Signer_Dilithium& operator=(Signer_Dilithium&&) noexcept = default;
 
-    // Signer interface --------------------------------------------------------
+    // Signer interface
     void                keygen() override;
     std::vector<uint8_t> pub()  const override;
     std::vector<uint8_t> sign(const std::vector<uint8_t>& msg) const override;
     bool verify(const std::vector<uint8_t>& msg,
                 const std::vector<uint8_t>& sig) const override;
 
-    // helpers -----------------------------------------------------------------
+    // helpers
     void   loadPrivateKey(const uint8_t* sk, size_t len);  // import existing sk
     void loadPublicKey (const uint8_t* rawPk, size_t len);
 
@@ -39,7 +39,7 @@ public:
     const uint8_t* getSecretKeyBuffer() const { return _sk.data(); }
 
 private:
-    OQS_SIG*             _oqs;   /* liboqs context for ML-DSA-87            */
-    std::vector<uint8_t> _pk;    /* public key  (2 592 bytes)               */
-    std::vector<uint8_t> _sk;    /* secret key (4 896 bytes)                */
+    OQS_SIG*             _oqs;
+    std::vector<uint8_t> _pk;
+    std::vector<uint8_t> _sk;
 };

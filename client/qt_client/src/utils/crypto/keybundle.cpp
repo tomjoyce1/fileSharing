@@ -9,9 +9,6 @@
 
 static constexpr int BASE64_VARIANT = sodium_base64_VARIANT_ORIGINAL;
 
-//───────────────────────────────────────────────────────────────────────────────
-//  Base64 helpers (unchanged from before)
-//───────────────────────────────────────────────────────────────────────────────
 std::string KeyBundle::toBase64(const std::vector<uint8_t>& data) {
     if (data.empty()) return "";
     size_t b64len = sodium_base64_encoded_len(data.size(), BASE64_VARIANT);
@@ -52,9 +49,6 @@ std::vector<uint8_t> KeyBundle::fromBase64(
     return bin;
 }
 
-//───────────────────────────────────────────────────────────────────────────────
-//  Default constructor: generate fresh keypairs (both pub AND priv)
-//───────────────────────────────────────────────────────────────────────────────
 KeyBundle::KeyBundle() {
     if (sodium_init() < 0) {
         throw std::runtime_error("KeyBundle::KeyBundle: sodium_init failed");
@@ -115,9 +109,6 @@ KeyBundle::KeyBundle(
     // because this constructor is strictly “public only.”
 }
 
-//───────────────────────────────────────────────────────────────────────────────
-//  Parameterized constructor from raw binary + private for “importing”
-//───────────────────────────────────────────────────────────────────────────────
 KeyBundle::KeyBundle(
     const std::vector<uint8_t>& x25519Public,
     const std::vector<uint8_t>& ed25519Public,
@@ -182,9 +173,6 @@ KeyBundle& KeyBundle::operator=(KeyBundle&& other) noexcept {
     return *this;
 }
 
-//───────────────────────────────────────────────────────────────────────────────
-//  toJson() ≔ only public keys, exactly what the server’s “register” expects
-//───────────────────────────────────────────────────────────────────────────────
 std::string KeyBundle::toJson() const {
     const std::string kemB64   = toBase64( der::x25519(x25519Pub_) );
     const std::string edB64    = toBase64( der::ed25519(ed25519Pub_) );

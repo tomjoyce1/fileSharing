@@ -48,16 +48,9 @@
 
 class ClientStore {
 public:
-    /**
-     * Construct ClientStore, pointing at the full path to the JSON file:
-     * e.g. "/home/alice/.ssshare/client_store.json"
-     */
     explicit ClientStore(const std::string& jsonPath);
     ~ClientStore();
 
-    /**
-     * Load from disk into memory.  If file does not exist or is zero-length, do nothing.
-     */
     void load();
 
     /**
@@ -107,10 +100,6 @@ public:
 
     /**
      * Returns the loaded UserInfo if (and only if) someone has successfully logged in.
-     * Otherwise returns std::nullopt.
-     *
-     * After login, `UserInfo.fullBundle` is set (has both public and private).
-     * If the user is not logged in (or login failed), this is std::nullopt.
      */
     std::optional<UserInfo> getUser() const;
 

@@ -3,7 +3,6 @@
 #include <cstring>
 #include <stdexcept>
 
-/*––––  ctor / dtor  –––––*/
 Signer_Dilithium::Signer_Dilithium() {
     if (sodium_init() < 0)
         throw std::runtime_error("libsodium init failed");
@@ -18,7 +17,6 @@ Signer_Dilithium::~Signer_Dilithium() {
     OQS_SIG_free(_oqs);
 }
 
-/*––––  keygen  –––––*/
 void Signer_Dilithium::keygen() {
     _pk.resize(_oqs->length_public_key);   // 2 592 B
     _sk.resize(_oqs->length_secret_key);   // 4 896 B
@@ -27,7 +25,6 @@ void Signer_Dilithium::keygen() {
         throw std::runtime_error("OQS_SIG_keypair failed");
 }
 
-/*––––  pub / sign / verify  –––––*/
 std::vector<uint8_t> Signer_Dilithium::pub() const { return _pk; }
 
 std::vector<uint8_t>
@@ -54,12 +51,12 @@ bool Signer_Dilithium::verify(const std::vector<uint8_t>& msg,
                           _pk.data()) == OQS_SUCCESS;
 }
 
-/*––––  import existing secret-key  –––––*/
+// import existing secret-key
 void Signer_Dilithium::loadPrivateKey(const uint8_t* rawSk, size_t len) {
     if (len != _oqs->length_secret_key)
         throw std::runtime_error("Signer_Dilithium::loadPrivateKey: wrong len");
 
-    _sk.assign(rawSk, rawSk + len);         // deep-copy into our vector
+    _sk.assign(rawSk, rawSk + len);
 }
 
 void Signer_Dilithium::loadPublicKey(const uint8_t* rawPk, size_t len)
@@ -67,5 +64,5 @@ void Signer_Dilithium::loadPublicKey(const uint8_t* rawPk, size_t len)
     if (len != _oqs->length_public_key)
         throw std::runtime_error("Signer_Dilithium::loadPublicKey wrong length");
 
-    _pk.assign(rawPk, rawPk + len);   // that’s all we need – verify() uses _pk
+    _pk.assign(rawPk, rawPk + len);
 }

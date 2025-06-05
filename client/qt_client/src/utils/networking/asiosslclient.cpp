@@ -3,7 +3,7 @@
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
-#include <openssl/ssl.h>         // SSL_set_tlsext_host_name
+#include <openssl/ssl.h>
 #include <filesystem>
 #include <sstream>
 #include <QDebug>
@@ -14,29 +14,27 @@ std::shared_ptr<boost::asio::ssl::context> AsioSslClient::s_ctx_{};
 std::vector<boost::asio::ip::tcp::endpoint> AsioSslClient::s_cached_eps_{};
 std::mutex AsioSslClient::s_eps_mtx_;
 
-/*────────────────────────   ctor / dtor   ────────────────────────*/
+
 
 AsioSslClient::AsioSslClient()
     : io_(std::make_shared<boost::asio::io_context>()),
     resolver_(std::make_shared<boost::asio::ip::tcp::resolver>(*io_))
 {
-    if (!s_ctx_) {                                     // first client in the app
+    if (!s_ctx_) {
         s_ctx_ = std::make_shared<boost::asio::ssl::context>(
             boost::asio::ssl::context::tls_client);
         s_ctx_->set_verify_mode(boost::asio::ssl::verify_peer);
     }
-    sslCtx_ = s_ctx_;                                  // just a cheap copy
+    sslCtx_ = s_ctx_;
 }
 
 
 AsioSslClient::~AsioSslClient()
 {
-    try {
-        if (stream_ && stream_->next_layer().is_open()) {
-            stream_->shutdown();
-            stream_->next_layer().close();
-        }
-    } catch (...) { /* never throw from dtor */ }
+    if (stream_ && stream_->next_layer().is_open()) {
+        stream_->shutdown();
+        stream_->next_layer().close();
+    }
 }
 
 
@@ -72,10 +70,8 @@ HttpResponse AsioSslClient::sendRequest(const std::string& host,
                                         const HttpRequest& request,
                                         int timeoutSeconds)
 {
-    // we only moved the code, so just call the new helper
     return sendRequest(request, timeoutSeconds);
 }
-/*──────────────────────  sendRequest()  ──────────────────────────*/
 
 HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
                                         int timeoutSeconds)
@@ -86,7 +82,7 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
 
     boost::system::error_code ec;
 
-    /* 1 — DNS  */
+    // DNS
     std::vector<boost::asio::ip::tcp::endpoint> eps;
     {
         std::scoped_lock lk(s_eps_mtx_);
@@ -101,14 +97,14 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
         eps = s_cached_eps_;
     }
 
-    /* 2 — socket+TLS  */
+    // TLS
     stream_.reset(new boost::asio::ssl::stream<
                   boost::asio::ip::tcp::socket>(*io_, *sslCtx_));
 
     if (!SSL_set_tlsext_host_name(stream_->native_handle(), host.c_str()))
         return makeError("SNI set failed");
 
-    /* 3 — TCP connect  */
+    // TCP connect
     boost::asio::connect(stream_->next_layer(), eps, ec);
     if (ec) {
         std::scoped_lock lk(s_eps_mtx_);
@@ -116,23 +112,20 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
         return makeError("connect: " + ec.message());
     }
 
-    /* 4 — TLS handshake (performs certificate + hostname check) */
+    // Handshake
     stream_->set_verify_callback(boost::asio::ssl::host_name_verification(host));    // ⭐ hostname ✔
     stream_->handshake(boost::asio::ssl::stream_base::client, ec);
     if (ec) return makeError("TLS handshake: " + ec.message());
 
-    /* 5 — send HTTP/1.1 request  */
     std::string rawReq = request.toString();
     boost::asio::write(*stream_, boost::asio::buffer(rawReq), ec);
     if (ec) return makeError("write: " + ec.message());
 
-    /* 6 — read headers  */
     boost::asio::streambuf buf;
     boost::asio::read_until(*stream_, buf, "\r\n\r\n", ec);
     if (ec && ec != boost::asio::error::eof)
         return makeError("read_until: " + ec.message());
 
-    /* 7 — parse status-line + headers (identical to your old code) */
     std::istream respStream(&buf);
 
     std::string statusLine; std::getline(respStream, statusLine);
@@ -149,7 +142,7 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
         hdr[k]=v;
     }
 
-    /* 8 — body (either chunked or Content-Length) — reused logic */
+    // body (either chunked or Content-Length)
     bool chunked = false;
     if (auto it=hdr.find("Transfer-Encoding"); it!=hdr.end()) {
         std::string v = it->second; std::transform(v.begin(),v.end(),v.begin(),::tolower);
@@ -175,7 +168,7 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
         body = oss.str();
     }
 
-    /* 9 — build full raw response so you can reuse HttpResponse::fromRaw */
+    // build full raw response
     std::ostringstream raw;
     raw << statusLine << "\r\n";
     for (auto& kv:hdr) raw << kv.first << ": " << kv.second << "\r\n";

@@ -4,11 +4,11 @@
 #include <array>
 #include <cstdint>
 #include <string>
-#include <sodium.h>           // for randombytes_buf, sodium_bin2base64, sodium_base642bin
+#include <sodium.h>
 #include <vector>
-#include <sstream>            // for std::ostringstream (used in buildDebugString)
+#include <sstream>
 #include <stdexcept>
-#include <nlohmann/json.hpp>  // https://github.com/nlohmann/json
+#include <nlohmann/json.hpp>
 
 /**
  * FileClientData holds the 4 secret values needed to decrypt or re‐share a file,
@@ -45,14 +45,11 @@ struct FileClientData : public CryptoBase {
     // Original filename on disk
     std::string filename;
 
-    //───────────────────────────────────────────────────────────────────────────
-    // 1) Default constructor (zero‐initializes everything)
+    // Default constructor (zero‐initializes everything)
     FileClientData() = default;
 
-    // 2) “Randomize” constructor
-    //
-    //    If you call FileClientData(true), it will fill FEK/MEK and nonces with randomness.
-    //    If you call FileClientData(false), it will leave them zeroed.
+    //“Randomize” constructor
+    // If you call FileClientData(true), it will fill FEK/MEK and nonces with randomness.
     explicit FileClientData(bool generate)
     {
         if (generate) {
@@ -95,15 +92,7 @@ struct FileClientData : public CryptoBase {
         return oss.str();
     }
 
-    //───────────────────────────────────────────────────────────────────────────
-    // 3) Base64 Encode / Decode Helpers (using libsodium)
-    //
-    //    These functions let you convert binary buffers to/from Base64 strings,
-    //    so that you can embed them in JSON.  They are placed here so you do not need
-    //    a separate “utils” file.
-    //
-    //    You must call sodium_init() somewhere in main() before ever using these.
-    //
+    // Base64 Encode / Decode Helpers (using libsodium)
     static std::string base64_encode(const uint8_t* data, size_t len) {
         // Calculate needed length for the Base64 buffer:
         // sodium_base642bin() output length = 4 * ceil(n/3).  We can allocate a bit more.
@@ -135,9 +124,9 @@ struct FileClientData : public CryptoBase {
                 maxDecodedLen,
                 b64.data(),
                 b64.size(),
-                nullptr,            // ignore whitespace chars automatically
+                nullptr,
                 &actualLen,
-                nullptr,            // no “chars left over” pointer
+                nullptr,
                 sodium_base64_VARIANT_ORIGINAL) != 0)
         {
             throw std::runtime_error("base64_decode: invalid input");
@@ -146,11 +135,6 @@ struct FileClientData : public CryptoBase {
         return out;
     }
 
-    //───────────────────────────────────────────────────────────────────────────
-    // 4) JSON Serialization / Deserialization
-    //
-    //    Uses nlohmann::json to convert to/from JSON.  Relies on the base64 helpers above.
-    //
     nlohmann::json to_json() const {
         nlohmann::json j;
         j["file_id"]            = file_id;
