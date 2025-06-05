@@ -98,10 +98,7 @@ Item {
                 console.log("QML → deleteRequested(" + fileId + ")")
                 fileListHandler.deleteFile(fileId)
             }
-            onRevokeRequested: {
-                console.log("QML → revokeRequested(" + fileId + ", " + arguments[1] + ")")
-                fileListHandler.revokeFile(fileId, arguments[1])
-            }
+
         }
     }
 }

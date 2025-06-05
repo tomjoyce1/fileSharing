@@ -1,40 +1,23 @@
 #include "LoginHandler.h"
-#include "../utils/ClientStore.h"    // adjust the include path if necessary
-
+#include "../utils/ClientStore.h"
+#include "../utils/HandlerUtils.h"
 #include <QMetaObject>
-#include <QtConcurrent>
-#include <QFutureWatcher>
-#include <QDebug>
 
 LoginHandler::LoginHandler(ClientStore* store, QObject* parent)
-    : QObject(parent),
-    m_store(store)
-{
-    // Assume ClientStore::load() was already called in main()
-}
+    : QObject(parent), m_store(store) {}
 
 void LoginHandler::validateLogin(const QString& username,
                                  const QString& password)
 {
-    // Basic client‐side validation:
     if (username.isEmpty() || password.isEmpty()) {
         emit loginResult("Error", "Please enter both username and password");
         return;
     }
 
-    // Run the “heavy lifting” (decrypting the ClientStore) off the UI thread:
-    auto future = QtConcurrent::run([=] {
-        doValidateLogin(username, password);
-    });
-
-    // Keep a watcher alive until the future finishes, then auto‐delete it:
-    auto* watch = new QFutureWatcher<void>(this);
-    connect(watch, &QFutureWatcher<void>::finished,
-            watch, &QObject::deleteLater);
-    watch->setFuture(future);
+    // run background work off the UI thread
+    HandlerUtils::runAsync([=] { doValidateLogin(username, password); });
 }
 
-// NOTE: The signature here must match exactly what’s in LoginHandler.h
 void LoginHandler::doValidateLogin(const QString& username,
                                    const QString& password)
 {
@@ -42,39 +25,25 @@ void LoginHandler::doValidateLogin(const QString& username,
     bool success = m_store->loginAndDecrypt(
         username.toStdString(),
         password.toStdString(),
-        err
-        );
+        err);
 
-    QString title, message;
+    QString title = success ? "Success" : "Error";
+    QString message;
     if (success) {
-        title = "Success";
         message = "Login successful!";
     } else {
-        title = "Error";
-        if (!err.empty()) {
-            message = QString::fromStdString(err);
-        } else {
-            message = "Invalid username or password";
-        }
+        message = err.empty() ? "Invalid username or password"
+                              : QString::fromStdString(err);
     }
 
-    if (success) {
-            auto opt = m_store->getUser();
-            if (opt) {
-                    const auto& kb = opt->fullBundle;
-                    qDebug() << "[DEBUG] ed25519PrivB64 length =" << QString::fromStdString(kb.getEd25519PrivateKeyBase64()).length();
-                    qDebug() << "[DEBUG] x25519PrivB64 length =" << QString::fromStdString(kb.getX25519PrivateKeyBase64()).length();
-                    qDebug() << "[DEBUG] dilithiumPrivB64 length =" << QString::fromStdString(kb.getDilithiumPrivateKeyBase64()).length();
-                }
-       }
-
-
-    // Emit back on the main (UI) thread:
     QMetaObject::invokeMethod(
         this,
-        [this, title, message]() {
-            emit loginResult(title, message);
-        },
-        Qt::QueuedConnection
-        );
+        [this, title, message]() { emit loginResult(title, message); },
+        Qt::QueuedConnection);
 }
+
+
+
+
+
+

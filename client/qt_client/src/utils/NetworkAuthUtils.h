@@ -76,10 +76,8 @@ makeAuthHeaders(
     // 2) canonical string
     std::string canonical = makeCanonicalString(username, timestamp, method, path, bodyJson);
 
-    //
-    // ─── Ed25519 sign that canonical ───
-    //
-    // 3a) Decode base64→raw bytes
+
+    // Ed25519 sign that canonical
     std::string edPrivB64 = privBundle.getEd25519PrivateKeyBase64();
     std::vector<uint8_t> edPrivRaw = FileClientData::base64_decode(edPrivB64);
 
@@ -100,10 +98,8 @@ makeAuthHeaders(
         );
     std::string edSigB64 = FileClientData::base64_encode(edSig.data(), edSig.size());
 
-    //
-    // ─── Dilithium sign that canonical ───
-    //
-    // 4a) Decode base64→raw bytes
+
+    // Dilithium sign that canonical
     std::string pqPrivB64 = privBundle.getDilithiumPrivateKeyBase64();
     std::vector<uint8_t> pqPrivRaw = FileClientData::base64_decode(pqPrivB64);
 

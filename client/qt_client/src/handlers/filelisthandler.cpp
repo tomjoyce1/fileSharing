@@ -93,38 +93,48 @@ void FileListHandler::deleteFile(qulonglong fileId)
     HandlerUtils::runAsync([this, fileId]() {
         auto maybeUser = m_store->getUser();
         if (!maybeUser.has_value()) {
-            emit errorOccurred("Not logged-in");
+            QMetaObject::invokeMethod(
+                this, [this]() { emit errorOccurred("Not logged-in"); },
+                Qt::QueuedConnection);
             return;
         }
         const auto& user   = *maybeUser;
         const auto& uname  = user.username;
         const auto& bundle = user.fullBundle;
 
-        // build Json body
-        nlohmann::json jBody;  jBody["file_id"] = static_cast<uint64_t>(fileId);
+        // build JSON body
+        nlohmann::json jBody; jBody["file_id"] = static_cast<uint64_t>(fileId);
         std::string bodyStr = jBody.dump();
 
         auto headers = NetworkAuthUtils::makeAuthHeaders(
-            uname, bundle,
-            "POST", "/api/fs/delete", bodyStr);
+            uname, bundle, "POST", "/api/fs/delete", bodyStr);
 
-        HttpRequest        req(HttpRequest::Method::POST, "/api/fs/delete", bodyStr, headers);
-        AsioSslClient      cli;
-        HttpResponse       resp = cli.sendRequest(req);
+        HttpRequest  req(HttpRequest::Method::POST,
+                        "/api/fs/delete", bodyStr, headers);
+        AsioSslClient cli;
+        HttpResponse  resp = cli.sendRequest(req);
 
         if (resp.statusCode != 200) {
-            emit deleteResult("Error",  "Delete Failed");
-            emit errorOccurred("Delete Failed");
+            QMetaObject::invokeMethod(
+                this, [this]() {
+                    emit deleteResult("Error",  "Delete Failed");
+                    emit errorOccurred("Delete Failed");
+                },
+                Qt::QueuedConnection);
             return;
         }
 
-        //success → drop from ClientStore
+        // success – remove cached keys
         m_store->removeFileData(fileId);
 
-        // Refresh list on the UI thread               */
-        QMetaObject::invokeMethod(this, [this](){ listAllFiles(/*page=*/1); }, Qt::QueuedConnection);
+        // refresh list (still off UI thread)
+        listAllFiles(1);
 
-        emit deleteResult("Success", "File deleted successfully");
+        QMetaObject::invokeMethod(
+            this, [this]() {
+                emit deleteResult("Success", "File deleted successfully");
+            },
+            Qt::QueuedConnection);
     });
 }
 
