@@ -3,7 +3,12 @@ import type { FileMetadataListItem } from "@/lib/types";
 import { createAuthenticatedRequest } from "./utils/encryption";
 import { getDecryptedPrivateKey } from '@/components/AuthPage';
 
-export function useDriveFiles(page: number, setError: (msg: string | null) => void, setIsLoading: (b: boolean) => void) {
+export function useDriveFiles(
+  page: number, 
+  setError: (msg: string | null) => void, 
+  setIsLoading: (b: boolean) => void,
+  refreshTrigger: number = 0
+) {
   const [files, setFiles] = useState<FileMetadataListItem[]>([]);
   const [hasNextPage, setHasNextPage] = useState(false);
 
@@ -83,8 +88,8 @@ export function useDriveFiles(page: number, setError: (msg: string | null) => vo
         setIsLoading(false);
       }
     };
-    fetchFiles();
-  }, [page]);
+    void fetchFiles();
+  }, [page, refreshTrigger]);
 
   return { files, hasNextPage };
 }

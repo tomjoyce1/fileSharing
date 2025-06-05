@@ -18,7 +18,7 @@ import {
 import { useDriveFiles } from "@/app/drive/useDriveFiles";
 import { useEffect, useState } from "react";
 import sodium from 'libsodium-wrappers';
-import { getObjectFromIndexedDB, getKeyFromIndexedDB } from '@/lib/crypto/KeyUtils';
+import { getObjectFromIndexedDB, getKeyFromIndexedDB, saveObjectToIndexedDB } from '@/lib/crypto/KeyUtils';
 import { extractX25519RawPublicKeyFromDER } from '@/lib/crypto/KeyHelper';
 import { encryptWithSharedSecret } from '@/app/drive/utils/encryption';
 import { randomBytes } from '@noble/ciphers/webcrypto';
@@ -43,13 +43,49 @@ type Props = {
   onFolderClick: (id: string, name: string) => void;
   getFileIcon: (fileType: string) => React.ReactNode;
   onDelete: (item: DriveItem) => void;
-  onRename: (item: DriveItem) => DriveItem;
   onFileOpen: (file: FileItem) => Promise<void>;
   setPage: (page: number) => void;
   page: number;
   hasNextPage: boolean;
   onShare: (item: DriveItem, recipient: string) => void;
 };
+
+// Add TOFU storage key
+const TOFU_STORAGE_KEY = 'trusted_key_bundles';
+
+// Add TOFU verification function
+async function verifySenderKeyBundle(ownerUsername: string, keyBundle: any): Promise<boolean> {
+  try {
+    // Get stored trusted bundles
+    const trustedBundlesStr = localStorage.getItem(TOFU_STORAGE_KEY);
+    const trustedBundles = trustedBundlesStr ? JSON.parse(trustedBundlesStr) : {};
+
+    // If we've seen this sender before, verify their key hasn't changed
+    if (trustedBundles[ownerUsername]) {
+      const storedBundle = trustedBundles[ownerUsername];
+      // Compare key bundles
+      if (JSON.stringify(storedBundle) !== JSON.stringify(keyBundle)) {
+        console.warn(`[TOFU] Key bundle changed for user ${ownerUsername}`);
+        // Ask user if they want to trust the new key
+        const trustNew = window.confirm(
+          `Warning: The public key for ${ownerUsername} has changed. ` +
+          `This could indicate a security issue. Do you want to trust the new key?`
+        );
+        if (!trustNew) {
+          return false;
+        }
+      }
+    }
+
+    // Store the key bundle as trusted
+    trustedBundles[ownerUsername] = keyBundle;
+    localStorage.setItem(TOFU_STORAGE_KEY, JSON.stringify(trustedBundles));
+    return true;
+  } catch (err) {
+    console.error('[TOFU] Error verifying sender key bundle:', err);
+    return false;
+  }
+}
 
 async function handleShare(item: DriveItem, recipientUsername: string) {
   if (!recipientUsername || !recipientUsername.trim()) {
@@ -196,7 +232,6 @@ export default function DriveList({
   onFolderClick,
   getFileIcon,
   onDelete,
-  onRename,
   onFileOpen,
   page,
   setPage,
@@ -212,12 +247,6 @@ export default function DriveList({
       alert(error);
     }
   }, [error]);
-
-  // Add a refresh handler that triggers a real update
-  const handleRefresh = () => {
-    setPage((p: number) => p + 1);
-    setTimeout(() => setPage((p: number) => p - 1), 0);
-  };
 
   const handleDelete = async (item: DriveItem) => {
     if (!window.confirm(`Delete "${item.name}"?`)) return;
@@ -252,26 +281,97 @@ export default function DriveList({
       if (!res.ok) {
         const errText = await res.text();
         if (errText.includes('Unknown file')) {
-          // File was already deleted, refresh the list but do not show error
-          handleRefresh();
+          // File was already deleted, just call onDelete
+          onDelete(item);
           return;
         }
         setError('Failed to delete file: ' + errText);
         return;
       }
-      // Always refresh file list after delete
-      handleRefresh();
+      // Call onDelete to trigger refresh
+      onDelete(item);
     } catch (err) {
       setError('Failed to delete file: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  const handleRename = (item: DriveItem) => {
-    onRename(item);
-  };
-
   const handleDownload = async (item: FileItem) => {
-    await onFileOpen(item);
+    try {
+      setIsLoading(true);
+      const username = localStorage.getItem('drive_username') || '';
+      
+      // Get private keys for authentication
+      const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519');
+      const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa');
+      if (!ed25519Priv || !mldsaPriv) {
+        throw new Error('Could not load your private keys. Please log in again.');
+      }
+
+      const privateKeyBundle = {
+        preQuantum: {
+          identitySigning: { privateKey: ed25519Priv },
+        },
+        postQuantum: {
+          identitySigning: { privateKey: mldsaPriv },
+        },
+      };
+
+      // Request file download
+      const { headers, body } = createAuthenticatedRequest(
+        'POST',
+        '/api/fs/download',
+        { file_id: Number(item.id) },
+        username,
+        privateKeyBundle
+      );
+
+      const response = await fetch('/api/fs/download', {
+        method: 'POST',
+        headers,
+        body
+      });
+
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Get owner's public key bundle for signature verification
+      const { headers: keyHeaders, body: keyBody } = createAuthenticatedRequest(
+        'POST',
+        '/api/keyhandler/getbundle',
+        { username: data.owner_username },
+        username,
+        privateKeyBundle
+      );
+
+      const keyResponse = await fetch('/api/keyhandler/getbundle', {
+        method: 'POST',
+        headers: keyHeaders,
+        body: keyBody
+      });
+
+      if (!keyResponse.ok) {
+        throw new Error('Failed to fetch owner public key bundle');
+      }
+
+      const keyData = await keyResponse.json();
+      const ownerKeyBundle = deserializeKeyBundlePublic(keyData.key_bundle);
+
+      // Verify sender's key bundle using TOFU
+      const isTrusted = await verifySenderKeyBundle(data.owner_username, keyData.key_bundle);
+      if (!isTrusted) {
+        throw new Error('Sender key verification failed');
+      }
+
+      // Now call onFileOpen with the verified data
+      await onFileOpen(item);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRevokeAccess = async (item: DriveItem) => {
@@ -357,7 +457,7 @@ export default function DriveList({
         <div className="col-span-3">Modified</div>
         <div className="col-span-1 flex justify-end">
           <button
-            onClick={handleRefresh}
+            onClick={() => setPage(page)}
             disabled={isLoading}
             className="ml-2 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-600"
             title="Refresh file list"
@@ -435,13 +535,7 @@ export default function DriveList({
                       <Share className="mr-2 h-4 w-4" />
                       Share
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-white"
-                      onClick={() => handleRename(item)}
-                    >
-                      <FolderPen className="mr-2 h-4 w-4" />
-                      Rename
-                    </DropdownMenuItem>
+
                     <DropdownMenuItem
                       className="text-red-400"
                       onClick={() => handleRevokeAccess(item)}

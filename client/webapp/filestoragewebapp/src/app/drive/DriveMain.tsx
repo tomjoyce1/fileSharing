@@ -19,12 +19,13 @@ export default function DriveMain() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const { files, hasNextPage } = useDriveFiles(page, setError, setIsLoading);
+  const { files, hasNextPage } = useDriveFiles(page, setError, setIsLoading, refreshTrigger);
 
   // Dont use dummy async function for fetchFiles in useFileActions and useKeyValidation
   const dummyAsync = async (_page: number) => {};
-  const { handleDelete, handleRename, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(dummyAsync, page, setError, setIsLoading);
+  const { handleDelete, handleFileOpen, decryptMetadata, ensureFileItem } = useFileActions(dummyAsync, page, setError, setIsLoading);
   useKeyValidation(page, setError, dummyAsync);
 
   // Processed files for display
@@ -57,14 +58,6 @@ export default function DriveMain() {
             if (!clientData) throw new Error('Missing decryption keys for this file.');
             const mek = new Uint8Array(clientData.mek);
             const metadataNonce = new Uint8Array(clientData.metadataNonce || clientData.metadata_nonce);
-
-
-            // loggin
-            console.log("MEK length:", mek.length, "Expected 32");
-            console.log("metadataNonce length:", metadataNonce.length, "Expected 16");
-            console.log("MEK:", mek);
-            console.log("metadataNonce:", metadataNonce);
-            
 
             const encryptedMetadata = typeof file.metadata === 'string'
               ? Uint8Array.from(atob(file.metadata), c => c.charCodeAt(0))
@@ -188,6 +181,7 @@ export default function DriveMain() {
         console.warn(`[DriveMain][Upload] No clientData or fileId to save to IndexedDB. result=`, result);
       }
       setPage(1);
+      setRefreshTrigger(prev => prev + 1); // Trigger a refresh after successful upload
     } catch (err) {
       setUploadError((err as Error).message);
       if ((err as Error).message && (err as Error).message.toLowerCase().includes('malformed key')) {
@@ -249,8 +243,10 @@ export default function DriveMain() {
             items={filteredItems}
             onFolderClick={() => {}}
             getFileIcon={getFileIcon}
-            onDelete={handleDelete}
-            onRename={(item) => handleRename(item)}
+            onDelete={(item) => {
+              handleDelete(item);
+              setRefreshTrigger(prev => prev + 1); // Trigger a refresh after delete
+            }}
             onFileOpen={handleFileOpen}
             setPage={setPage}
             page={page}

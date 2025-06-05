@@ -63,51 +63,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
     })();
   };
 
-  const handleRename = (item: any): FileItem => {
-    const fileItem = ensureFileItem(item);
-    console.log('Initiating file rename', { fileId: fileItem.id, currentName: fileItem.name });
-    const newName = prompt("Enter new name", fileItem.name);
-    if (!newName || newName === fileItem.name) {
-      console.log('Rename cancelled or unchanged', { fileId: fileItem.id });
-      return fileItem;
-    }
-    console.log('Processing file rename', { 
-      fileId: fileItem.id, 
-      oldName: fileItem.name, 
-      newName 
-    });
-    void (async () => {
-      try {
-        const response = await fetch(`/api/fs/rename/${fileItem.id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newName })
-        });
-        if (!response.ok) {
-          console.log('Rename request failed', { 
-            fileId: fileItem.id, 
-            newName,
-            status: response.status 
-          });
-          throw new Error('Failed to rename file');
-        }
-        console.log('File renamed successfully', { 
-          fileId: fileItem.id, 
-          oldName: fileItem.name, 
-          newName 
-        });
-        void fetchFiles(page);
-      } catch (err) {
-        console.log('Rename operation failed', { 
-          fileId: fileItem.id,
-          newName,
-          error: err instanceof Error ? err.message : String(err)
-        });
-        setError('Failed to rename file');
-      }
-    })();
-    return { ...fileItem, name: newName };
-  };
+  
 
   const decryptMetadata = async (file: any) => {
     const fileId = file.file_id ?? file.id;
@@ -455,7 +411,7 @@ export function useFileActions(fetchFiles: (page: number) => Promise<void>, page
     }
   };
 
-  return { handleDelete, handleRename, ensureFileItem, decryptMetadata, handleFileOpen };
+  return { handleDelete, ensureFileItem, decryptMetadata, handleFileOpen };
 }
 
 export async function fetchFileMetadata(fileId: string) {
