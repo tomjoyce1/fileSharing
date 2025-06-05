@@ -123,6 +123,17 @@ export default function DriveMain() {
     setUploading(true);
     setUploadError(null);
     try {
+      // Log file size in GB
+      const fileSizeGB = file.size / (1024 * 1024 * 1024);
+      console.log(`[File Size] ${file.name}: ${fileSizeGB.toFixed(2)} GB`);
+      
+      // Check against MAX_FILE_SIZE (50MB)
+      const MAX_FILE_SIZE = 50 * 1024 * 1024;
+      if (file.size > MAX_FILE_SIZE) {
+        console.error(`[File Size Error] ${file.name} exceeds maximum size of 50MB (${(MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2)} GB)`);
+        throw new Error(`File size exceeds maximum limit of 50MB`);
+      }
+
       // Read file as ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
       const fileContent = new Uint8Array(arrayBuffer);

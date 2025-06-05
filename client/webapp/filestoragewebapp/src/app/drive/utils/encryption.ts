@@ -7,13 +7,30 @@ import sodium from 'libsodium-wrappers';
 // import type { KeyBundlePrivate, FileEncryptionResult, UploadRequestBody, ClientFileData, UploadResponse } from '../types/fileTypes';
 
 // Helper: Uint8Array to base64
-function uint8ToBase64(arr: Uint8Array): string {
-  return btoa(String.fromCharCode(...arr));
+function uint8ToBase64(bytes: Uint8Array): string {
+  // Convert Uint8Array to base64 using browser APIs
+  return btoa(
+    String.fromCharCode.apply(null, Array.from(bytes))
+  );
 }
+
+
 // Helper: base64 to Uint8Array
 function base64ToUint8(str: string): Uint8Array {
-  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  return btoa(
+    new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+  );
+}
+
 
 // Helper: SHA-256 to hex using SubtleCrypto
 async function sha256Hex(base64str: string): Promise<string> {
@@ -168,11 +185,24 @@ export async function uploadFile(
   error?: string;
 }> {
   try {
+    // Log file size before encryption
+    const fileSizeMB = fileContent.length / (1024 * 1024);
+    console.log(`[Upload] File size before encryption: ${fileSizeMB.toFixed(2)} MB`);
+
     // Step 1: Encrypt the file and metadata
     const encryptionResult = encryptFile(fileContent, metadata);
-    // Step 2: Convert encrypted data to base64 for transmission
-    const encryptedFileBase64 = uint8ToBase64(encryptionResult.encryptedContent);
-    const encryptedMetadataBase64 = uint8ToBase64(encryptionResult.encryptedMetadata);
+    
+    // Log encrypted size
+    const encryptedSizeMB = encryptionResult.encryptedContent.length / (1024 * 1024);
+    console.log(`[Upload] Encrypted file size: ${encryptedSizeMB.toFixed(2)} MB`);
+
+    // Step 2: Convert encrypted data to base64 for transmission using the new method
+    const encryptedFileBase64 = arrayBufferToBase64(encryptionResult.encryptedContent.buffer);
+    const encryptedMetadataBase64 = arrayBufferToBase64(encryptionResult.encryptedMetadata.buffer);
+    
+    // Log base64 size
+    console.log(`[Upload] Base64 encoded size: ${(encryptedFileBase64.length / (1024 * 1024)).toFixed(2)} MB`);
+
     // Step 3: Generate file signatures (await)
     const fileSignatures = await generateFileSignatures(
       username,
@@ -180,6 +210,7 @@ export async function uploadFile(
       encryptedMetadataBase64,
       privateKeyBundle
     );
+
     // Step 4: Create request body
     const requestBody = {
       file_content: encryptedFileBase64,
@@ -187,6 +218,11 @@ export async function uploadFile(
       pre_quantum_signature: fileSignatures.pre_quantum_signature,
       post_quantum_signature: fileSignatures.post_quantum_signature,
     };
+
+    // Log request body size
+    const requestBodySize = JSON.stringify(requestBody).length;
+    console.log(`[Upload] Request body size: ${(requestBodySize / (1024 * 1024)).toFixed(2)} MB`);
+
     const bodyString = JSON.stringify(requestBody);
     // Step 5: Create authenticated request (for headers, use timestamp etc. as before)
     const uploadUrl = `${serverUrl}/api/fs/upload`;
@@ -207,8 +243,9 @@ export async function uploadFile(
       'X-Signature': `${preQuantumSigB64}||${postQuantumSigB64}`,
     };
     // logging
-    console.log('UPLOAD HEADERS', JSON.stringify(headers).substring(0, 200));
-    console.log('UPLOAD BODY', bodyString.substring(0, 200));
+    console.log('[Upload] Headers:', JSON.stringify(headers, null, 2));
+    console.log('[Upload] Starting upload request...');
+    
     // Step 6: Send HTTP request
     const response = await fetch(uploadUrl, {
       method: 'POST',
@@ -232,6 +269,7 @@ export async function uploadFile(
       clientData: encryptionResult.clientData,
     };
   } catch (error) {
+    console.error('[UPLOAD ERROR]', error instanceof Error ? error.stack || error.message : error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
