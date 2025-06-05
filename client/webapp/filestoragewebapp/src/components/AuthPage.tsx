@@ -547,13 +547,7 @@ try {
               >
                 Create account
               </button>
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                className="text-blue-400 hover:text-blue-300"
-              >
-                Forgot password?
-              </button>
+
             </>
           ) : (
             <button

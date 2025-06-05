@@ -49,7 +49,11 @@ async function getFileAccess(
       .then((rows) => rows[0]);
 
     if (ownedFile) {
-      return ok({         ...ownedFile,         is_owner: true,       });
+      return ok({
+        ...ownedFile,
+        is_owner: true,
+      });
+    }
 
     // user has shared access?
     const sharedFile = await db
@@ -83,31 +87,28 @@ async function getFileAccess(
       .then((rows) => rows[0]);
 
     if (sharedFile) {
-      return (
-        ok({
-          file_id: sharedFile.file_id,
-          storage_path: sharedFile.storage_path,
-          metadata: sharedFile.metadata,
-          pre_quantum_signature: sharedFile.pre_quantum_signature,
-          post_quantum_signature: sharedFile.post_quantum_signature,
-          owner_user_id: sharedFile.owner_user_id,
-          owner_username: sharedFile.owner_username,
-          is_owner: false,
-          shared_access: {
-            encrypted_fek: sharedFile.encrypted_fek.toString("base64"),
-            encrypted_fek_nonce:
-              sharedFile.encrypted_fek_nonce.toString("base64"),
-            encrypted_mek: sharedFile.encrypted_mek.toString("base64"),
-            encrypted_mek_nonce:
-              sharedFile.encrypted_mek_nonce.toString("base64"),
-            ephemeral_public_key:
-              sharedFile.ephemeral_public_key.toString("base64"),
-            file_content_nonce:
-              sharedFile.file_content_nonce.toString("base64"),
-            metadata_nonce: sharedFile.metadata_nonce.toString("base64"),
-          },
-        })
-      );
+      return ok({
+        file_id: sharedFile.file_id,
+        storage_path: sharedFile.storage_path,
+        metadata: sharedFile.metadata,
+        pre_quantum_signature: sharedFile.pre_quantum_signature,
+        post_quantum_signature: sharedFile.post_quantum_signature,
+        owner_user_id: sharedFile.owner_user_id,
+        owner_username: sharedFile.owner_username,
+        is_owner: false,
+        shared_access: {
+          encrypted_fek: sharedFile.encrypted_fek.toString("base64"),
+          encrypted_fek_nonce:
+            sharedFile.encrypted_fek_nonce.toString("base64"),
+          encrypted_mek: sharedFile.encrypted_mek.toString("base64"),
+          encrypted_mek_nonce:
+            sharedFile.encrypted_mek_nonce.toString("base64"),
+          ephemeral_public_key:
+            sharedFile.ephemeral_public_key.toString("base64"),
+          file_content_nonce: sharedFile.file_content_nonce.toString("base64"),
+          metadata_nonce: sharedFile.metadata_nonce.toString("base64"),
+        },
+      });
     }
 
     return err({ message: "File not found", status: 404 });
