@@ -28,12 +28,6 @@ export function createSignatures(
   canonicalString: string,
   privateBundle: KeyBundlePrivate
 ): { preQuantum: string; postQuantum: string } {
-  // Debugging: Log the structure of privateBundle
-  console.log("[Debug] Private Key Bundle:", {
-    preQuantum: privateBundle?.preQuantum?.identitySigning,
-    postQuantum: privateBundle?.postQuantum?.identitySigning,
-  });
-
   if (!privateBundle?.preQuantum?.identitySigning?.privateKey) {
     throw new Error("Pre-Quantum identitySigning private key is undefined");
   }
@@ -92,8 +86,6 @@ async function verifySignatures(
       Buffer.from(canonicalString),
       Buffer.from(signatures.postQuantum, "base64")
     );
-
-    console.log("Backend Canonical:", canonicalString);
 
     return preQuantumValid && postQuantumValid;
   } catch {
@@ -210,9 +202,7 @@ function logSigDebug(label: string, data: any) {
         typeof data === "string" ? data : JSON.stringify(data, null, 2)
       }\n`
     );
-  } catch (e) {
-    console.error("[sig-debug.log] Failed to write log", e);
-  }
+  } catch {}
 }
 
 async function verifyRequestSignature(
@@ -224,44 +214,21 @@ async function verifyRequestSignature(
   const timestamp = request.headers.get("X-Timestamp");
   const signature = request.headers.get("X-Signature");
 
-  console.log("Starting verifyRequestSignature...");
-
-  console.log(
-    "new log Key type:",
-    typeof publicBundle.postQuantum.identitySigningPublicKey,
-    "new log Length:",
-    publicBundle.postQuantum.identitySigningPublicKey.length
-  );
-
-  console.log("new log Username:", request.headers.get("X-Username"));
-  console.log("new log Timestamp:", request.headers.get("X-Timestamp"));
-  console.log("new log Body:", request.headers.get("X-Signature"));
-
-  console.log("AUTH REQUEST HEADERS", { username, timestamp, signature });
-
   if (!username || !timestamp || !signature) {
-    console.log("AUTH ERROR", "Missing required headers");
     return null;
   }
 
   if (!isWithinReplayWindow(timestamp)) {
-    console.log("AUTH ERROR", {
-      serverTime: new Date().toISOString(),
-      clientTimestamp: timestamp,
-    });
     return null;
   }
 
   const signatures = parseSignatures(signature);
   if (!signatures) {
-    console.log("AUTH ERROR", "Invalid signature format");
     return null;
   }
 
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
-
-  console.log("AUTH REQUEST BODY", requestBody);
 
   const requestUrl = new URL(request.url);
   const requestPath = requestUrl.pathname;
@@ -274,32 +241,17 @@ async function verifyRequestSignature(
     requestBody
   );
 
-  console.log("AUTH BACKEND CANONICAL STRING", canonicalString);
-  console.log("AUTH SIGNATURES", signatures);
-
   try {
     const isValid = await verifySignatures(
       canonicalString,
       signatures,
       publicBundle
     );
-    console.log("AUTH SIGNATURE VERIFICATION RESULT", isValid);
-    console.log("new log isValid:", isValid);
     if (!isValid) {
-      console.log("new log isValid:", isValid);
-      console.log("AUTH SIGNATURE VERIFICATION FAILURE", {
-        canonicalString,
-        signatures,
-      });
       return null;
     }
     return username;
-  } catch (e) {
-    console.log("new log e:", e);
-    console.log(
-      "AUTH SIGNATURE VERIFICATION EXCEPTION",
-      e instanceof Error ? e.stack || e.message : e
-    );
+  } catch {
     return null;
   }
 }
@@ -314,7 +266,6 @@ export async function getAuthenticatedUserFromRequest(
   }
 
   try {
-    // get user from database
     const user = await db
       .select()
       .from(usersTable)
@@ -326,31 +277,10 @@ export async function getAuthenticatedUserFromRequest(
       return err("User not found");
     }
 
-    // verify request signature
     const userPublicBundle = deserializeKeyBundlePublic(
       JSON.parse(user.public_key_bundle.toString())
     );
 
-    // Log public key bundle for debugging
-    console.log("[Debug] Public Key Bundle:", {
-      preQuantum: {
-        identityKemPublicKey: userPublicBundle.preQuantum.identityKemPublicKey
-          .export({ format: "der", type: "spki" })
-          .toString("base64"),
-        identitySigningPublicKey:
-          userPublicBundle.preQuantum.identitySigningPublicKey
-            .export({ format: "der", type: "spki" })
-            .toString("base64"),
-      },
-      postQuantum: {
-        identitySigningPublicKey:
-          userPublicBundle.postQuantum.identitySigningPublicKey
-            .slice(0, 10)
-            .toString() + "...", // Shortened for brevity
-      },
-    });
-
-    // use provided body or read from request
     const requestBody = body !== undefined ? body : await req.clone().text();
 
     const authenticatedUsername = await verifyRequestSignature(

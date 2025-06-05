@@ -109,22 +109,10 @@ export function serializeKeyBundlePublic(
   };
 }
 
-function logErrorDetails(context: string, error: unknown) {
-  console.error(`[Error] Context: ${context}`);
-  if (error instanceof Error) {
-    console.error(`[Error Details] Message: ${error.message}`);
-    console.error(`[Error Details] Stack: ${error.stack}`);
-  } else {
-    console.error(`[Error Details]`, error);
-  }
-}
-
 export function deserializeKeyBundlePublic(
   serialized: z.infer<typeof KeyBundlePublicSerializable>
 ): KeyBundlePublic {
   try {
-    console.log("[Debug] Serialized Key Bundle:", serialized);
-
     const kemKeyBuffer = Buffer.from(
       serialized.preQuantum.identityKemPublicKey,
       "base64"
@@ -134,27 +122,8 @@ export function deserializeKeyBundlePublic(
       "base64"
     );
 
-    console.log("[Debug] Decoded KEM Key Buffer:", kemKeyBuffer);
-    console.log("[Debug] Decoded Signing Key Buffer:", signingKeyBuffer);
-
-    // Log buffer lengths and types for additional debugging
-    console.log("[Debug] KEM Key Buffer Length:", kemKeyBuffer.length);
-    console.log("[Debug] Signing Key Buffer Length:", signingKeyBuffer.length);
-    console.log("[Debug] KEM Key Buffer Type:", kemKeyBuffer.constructor.name);
-    console.log(
-      "[Debug] Signing Key Buffer Type:",
-      signingKeyBuffer.constructor.name
-    );
-
     // Check if the buffer is PEM, DER, or raw
     const isPem = kemKeyBuffer.toString().includes("-----BEGIN");
-    console.log("[Debug] KEM Key Buffer Format:", isPem ? "PEM" : "DER or raw");
-
-    const isPemSigning = signingKeyBuffer.toString().includes("-----BEGIN");
-    console.log(
-      "[Debug] Signing Key Buffer Format:",
-      isPemSigning ? "PEM" : "DER or raw"
-    );
 
     // Validate key buffers
     if (kemKeyBuffer.length === 0 || signingKeyBuffer.length === 0) {
@@ -202,7 +171,6 @@ export function deserializeKeyBundlePublic(
       },
     };
   } catch (error) {
-    logErrorDetails("Deserialize Key Bundle Public", error);
     throw error;
   }
 }

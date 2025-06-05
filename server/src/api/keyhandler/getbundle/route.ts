@@ -44,18 +44,7 @@ async function getUserKeyBundle(
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {
-  console.log("[getbundle] Incoming request");
-  console.log(
-    "[getbundle] Headers:",
-    Object.fromEntries(
-      req.headers.entries ? req.headers.entries() : Object.entries(req.headers)
-    )
-  );
-  console.log("[getbundle] Body:", req.body);
-  console.log("[getbundle] Validated:", req.validated);
-
   if (!req.validated?.body) {
-    console.log("[getbundle] No validated body");
     return Response.json(
       {
         message: "Internal Server Error",
@@ -65,34 +54,25 @@ export async function POST(
   }
 
   const { username } = req.validated.body;
-  console.log("[getbundle] Username:", username);
 
-  // authenticate user and verify request signature
   const userResult = await getAuthenticatedUserFromRequest(
     req,
     JSON.stringify(req.validated.body)
   );
   if (userResult.isErr()) {
-    console.log("[getbundle] Authentication failed:", userResult.error);
     return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
-  console.log(
-    "[getbundle] Authentication succeeded:",
-    userResult.value?.username
-  );
 
   const result = await getUserKeyBundle(username);
 
   if (result.isErr()) {
     const apiError = result.error;
-    console.log("[getbundle] getUserKeyBundle failed:", apiError);
     return Response.json(
       { message: apiError.message },
       { status: apiError.status }
     );
   }
 
-  console.log("[getbundle] Success, returning key bundle for", username);
   return Response.json(
     {
       key_bundle: result.value,
