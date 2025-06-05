@@ -7,6 +7,7 @@
 #include <sodium.h>
 #include <openssl/rand.h>
 #include "../utils/networking/asiosslclient.h"
+#include "../utils/crypto/hash.h"
 
 using json = nlohmann::json;
 
@@ -29,11 +30,7 @@ void FileShareHandler::shareFile(qulonglong fileId,
     });
 }
 
-//───────────────────────────────────────────────────────────────────────────────
-//                      Actual work happens here
-//───────────────────────────────────────────────────────────────────────────────
-void FileShareHandler::processShare(qulonglong fileId,
-                                    const std::string& targetUser)
+void FileShareHandler::processShare(qulonglong fileId, const std::string &targetUser)
 {
     qDebug() << "[processShare] Entered. fileId =" << fileId
              << " targetUser =" << QString::fromStdString(targetUser);
@@ -41,13 +38,12 @@ void FileShareHandler::processShare(qulonglong fileId,
     // ─── 0. Pull current user + keys from store ──────────────────────────────
     auto maybeUser = m_store->getUser();
     if (!maybeUser.has_value()) {
-        qWarning() << "[processShare] ERROR: No logged-in user in ClientStore";
-        emit shareResult("Error", "Not logged-in");
+        qWarning() << "[processShare] ERROR: No logged‑in user in ClientStore";
+        emit shareResult("Error", "Not logged‑in");
         return;
     }
-    const auto& me      = *maybeUser;
-    const auto& myUname = me.username;
-    const auto& myPriv  = me.fullBundle;
+    const auto &me      = *maybeUser;
+    const auto &myUname = me.username;
     qDebug() << "[processShare] Current user =" << QString::fromStdString(myUname);
 
     // Prevent sharing with self
@@ -58,152 +54,89 @@ void FileShareHandler::processShare(qulonglong fileId,
     }
 
     // ─── 1. Look up FileClientData; must own the file ─────────────────────────
-    FileClientData* fcdPtr = m_store->getFileData(fileId);
+    FileClientData *fcdPtr = m_store->getFileData(fileId);
     if (!fcdPtr) {
         QString msg = QString("No local FileClientData for file_id=%1").arg(fileId);
         qWarning() << "[processShare] ERROR:" << msg;
         emit shareResult("Error", msg);
         return;
     }
-    const FileClientData& fcd = *fcdPtr;
-    qDebug() << "[processShare] Found FileClientData:";
-    qDebug() << "   filename    =" << QString::fromStdString(fcd.filename);
-    qDebug() << "   local FEK   =" << "(32 bytes)";
-    qDebug() << "   local MEK   =" << "(32 bytes)";
-    qDebug() << "   file_nonce  =" << QString::fromStdString(
-        FileClientData::base64_encode(fcd.file_nonce.data(),
-                                      fcd.file_nonce.size()));
-    qDebug() << "   metadata_nonce =" << QString::fromStdString(
-        FileClientData::base64_encode(fcd.metadata_nonce.data(),
-                                      fcd.metadata_nonce.size()));
+    const FileClientData &fcd = *fcdPtr;
 
     // ─── 2. Fetch Bob’s key bundle ────────────────────────────────────────────
     std::string errFetch;
-    qDebug() << "[processShare] Fetching public key bundle for"
-             << QString::fromStdString(targetUser);
     auto maybeBobPub = fetchPublicBundle(targetUser, errFetch);
     if (!maybeBobPub.has_value()) {
-        QString msg = QString("Key-bundle fetch failed: %1")
-                          .arg(QString::fromStdString(errFetch));
-        qWarning() << "[processShare] ERROR:" << msg;
+        QString msg = QString("Key‑bundle fetch failed: %1").arg(QString::fromStdString(errFetch));
         emit shareResult("Error", msg);
         return;
     }
-    const KeyBundle& bobPub = *maybeBobPub;
-    qDebug() << "[processShare] Obtained Bob’s public bundle:";
-    qDebug() << "   X25519 public key (raw, hex) ="
-             << QByteArray::fromRawData(
-                    reinterpret_cast<const char*>(bobPub.getX25519Pub().data()),
-                    static_cast<int>(bobPub.getX25519Pub().size())
-                    ).toHex();
+    const KeyBundle &bobPub = *maybeBobPub;
 
     // ─── 3. Ephemeral X25519 → sharedSecret ─────────────────────────────────
     Kem_Ecdh eph;
     eph.keygen();
     std::vector<uint8_t> ephPub  = eph.pub();
     std::vector<uint8_t> ephPriv = eph.getSecretKey();
-    qDebug() << "[processShare] Generated ephemeral X25519 keys:";
-    qDebug() << "   ephPub  (raw, hex) ="
-             << QByteArray::fromRawData(
-                    reinterpret_cast<const char*>(ephPub.data()),
-                    static_cast<int>(ephPub.size())
-                    ).toHex();
-    qDebug() << "   ephPriv (hidden)  (32 bytes)";
 
     std::vector<uint8_t> shared(crypto_scalarmult_BYTES);
-    int dhRet = crypto_scalarmult(shared.data(),
-                                  ephPriv.data(),
-                                  bobPub.getX25519Pub().data());
-    if (dhRet != 0) {
-        qWarning() << "[processShare] ERROR: crypto_scalarmult returned" << dhRet;
+    if (crypto_scalarmult(shared.data(), ephPriv.data(), bobPub.getX25519Pub().data()) != 0) {
         emit shareResult("Error", "ECDH failed");
         return;
     }
-    qDebug() << "[processShare] Derived shared secret (32 bytes, hex) ="
-             << QByteArray::fromRawData(
-                    reinterpret_cast<const char*>(shared.data()),
-                    static_cast<int>(shared.size())
-                    ).toHex();
+    qDebug() << "[processShare] Derived raw secret (32 B) ="
+             << QByteArray::fromRawData(reinterpret_cast<const char *>(shared.data()), static_cast<int>(shared.size())).toHex();
 
-    // ─── 4. Wrap FEK & MEK under sharedSecret ───────────────────────────────
-    auto wrapKey = [&](const std::array<uint8_t,32>& key32,
-                       std::string& outCtB64,
-                       std::string& outIvB64) -> bool
-    {
-        Symmetric::Ciphertext c;
+    // ─── 3b. **Derive the AES key exactly like Bob: SHA‑256(secret) ** ──────
+    std::vector<uint8_t> aesKey = Hash::sha256(shared); // 32‑byte digest
+    qDebug() << "[processShare] aesKey = SHA‑256(shared) (32 B) ="
+             << QByteArray::fromRawData(reinterpret_cast<const char *>(aesKey.data()), static_cast<int>(aesKey.size())).toHex();
+
+    // ─── 4. Wrap FEK & MEK with aesKey ──────────────────────────────────────
+    auto wrapKey = [&](const std::array<uint8_t, 32> &key,
+                       std::string &outCtB64,
+                       std::string &outIvB64) -> bool {
         try {
-            /* encrypt with the *raw* shared-secret */
-            c = Symmetric::encrypt(
-                std::vector<uint8_t>(key32.begin(), key32.end()),
-                shared                     // <-- no SHA-256, just use it
-                );
-        } catch (const std::exception& ex) {
-            qWarning() << "[processShare] ERROR: Symmetric::encrypt() threw:"
-                       << ex.what();
+            Symmetric::Ciphertext c = Symmetric::encrypt({key.begin(), key.end()}, aesKey);
+            outCtB64 = FileClientData::base64_encode(c.data.data(), c.data.size());
+            outIvB64 = FileClientData::base64_encode(c.iv.data(), c.iv.size());
+            return true;
+        } catch (const std::exception &ex) {
+            qWarning() << "[processShare] ERROR: encrypt threw:" << ex.what();
             return false;
         }
-
-        outCtB64 = FileClientData::base64_encode(c.data.data(), c.data.size());
-        outIvB64 = FileClientData::base64_encode(c.iv.data(),   c.iv.size());
-        return true;
     };
 
-
     std::string encFekB64, ivFekB64, encMekB64, ivMekB64;
-    if (!wrapKey(fcd.fek, encFekB64, ivFekB64)) {
-        emit shareResult("Error", "Failed to wrap FEK");
-        return;
-    }
-    if (!wrapKey(fcd.mek, encMekB64, ivMekB64)) {
-        emit shareResult("Error", "Failed to wrap MEK");
+    if (!wrapKey(fcd.fek, encFekB64, ivFekB64) || !wrapKey(fcd.mek, encMekB64, ivMekB64)) {
+        emit shareResult("Error", "Failed to wrap FEK/MEK");
         return;
     }
 
     // ─── 5. Build JSON body exactly as server expects ────────────────────────
-    nlohmann::ordered_json body;           // not plain `json`
-
-    body["file_id"]              = static_cast<uint64_t>(fileId);
-    body["shared_with_username"] = targetUser;
-    body["encrypted_fek"]        = encFekB64;
-    body["encrypted_fek_nonce"]  = ivFekB64;
-    body["encrypted_mek"]        = encMekB64;
-    body["encrypted_mek_nonce"]  = ivMekB64;
-    body["ephemeral_public_key"] = FileClientData::base64_encode(
-        ephPub.data(), ephPub.size());
-    body["file_content_nonce"]   = FileClientData::base64_encode(
-        fcd.file_nonce.data(), fcd.file_nonce.size());
-    body["metadata_nonce"]       = FileClientData::base64_encode(
-        fcd.metadata_nonce.data(), fcd.metadata_nonce.size());
-
-    QString bodyPretty = QString::fromStdString(body.dump(2));
-    qDebug() << "[processShare] JSON request body:";
-    qDebug().noquote() << bodyPretty;
+    nlohmann::ordered_json body;
+    body["file_id"]               = static_cast<uint64_t>(fileId);
+    body["shared_with_username"]  = targetUser;
+    body["encrypted_fek"]         = encFekB64;
+    body["encrypted_fek_nonce"]   = ivFekB64;
+    body["encrypted_mek"]         = encMekB64;
+    body["encrypted_mek_nonce"]   = ivMekB64;
+    body["ephemeral_public_key"]  = FileClientData::base64_encode(ephPub.data(), ephPub.size());
+    body["file_content_nonce"]    = FileClientData::base64_encode(fcd.file_nonce.data(), fcd.file_nonce.size());
+    body["metadata_nonce"]        = FileClientData::base64_encode(fcd.metadata_nonce.data(), fcd.metadata_nonce.size());
 
     // ─── 6. POST /api/fs/share ───────────────────────────────────────────────
     std::string errSend;
-    qDebug() << "[processShare] Calling sendShareRequest(...)";
-    bool ok = sendShareRequest(body, errSend);
-    if (!ok) {
-        QString msg = QString("Share request failed: %1").arg(QString::fromStdString(errSend));
-        qWarning() << "[processShare] ERROR:" << msg;
-        emit shareResult("Error", msg);
+    if (!sendShareRequest(body, errSend)) {
+        emit shareResult("Error", QString::fromStdString(errSend));
         return;
     }
 
     // ─── 7. Success → notify QML ─────────────────────────────────────────────
-    qDebug() << "[processShare] Share succeeded!";
-    QMetaObject::invokeMethod(
-        this,
-        [=]() {
-            emit shareResult("Success", "File shared successfully");
-        },
-        Qt::QueuedConnection
-        );
+    emit shareResult("Success", "File shared successfully");
 }
 
-//───────────────────────────────────────────────────────────────────────────────
 //     Helper: fetch public bundle for `uname` (POST /api/identity/get-bundle)
-//───────────────────────────────────────────────────────────────────────────────
 std::optional<KeyBundle>
 FileShareHandler::fetchPublicBundle(const std::string& uname,
                                     std::string& outErr) const

@@ -33,15 +33,11 @@ static std::vector<uint8_t> base64Decode(const std::string& s) {
     return FileClientData::base64_decode(s);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
 // Logging macro
-// ──────────────────────────────────────────────────────────────────────────────
 #ifndef CLS_LOG
 #define CLS_LOG(tag)  qDebug().nospace() << "[ClientStore][" << tag << "] "
 #endif
 
-
-// ──────────────────────────────────────────────────────────────────────────────
 
 ClientStore::ClientStore(const std::string& jsonPath)
     : m_path(jsonPath)
@@ -74,8 +70,6 @@ ClientStore::~ClientStore() {
     CLS_LOG("dtor") << "saving before destruction";
     save();
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
 
 void ClientStore::load() {
     std::lock_guard<std::mutex> locker(m_mutex);
@@ -143,8 +137,6 @@ void ClientStore::save() {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-
 std::optional<ClientStore::UserInfo> ClientStore::getUser() const {
     std::lock_guard<std::mutex> locker(m_mutex);
     CLS_LOG("getUser") << "called; has_user=" << (m_user.has_value() ? "yes" : "no");
@@ -156,8 +148,6 @@ void ClientStore::clearUser() {
     CLS_LOG("clearUser") << "called";
     m_user.reset();
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
 
 FileClientData* ClientStore::getFileData(uint64_t file_id) {
     std::lock_guard<std::mutex> locker(m_mutex);
@@ -190,10 +180,6 @@ void ClientStore::removeFileData(uint64_t file_id) {
     }
     save();
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Internal JSON (de)serialization
-// ──────────────────────────────────────────────────────────────────────────────
 
 json ClientStore::to_json() const {
     // Assumes caller already holds m_mutex
@@ -276,10 +262,6 @@ void ClientStore::from_json(const json& j) {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Key-derivation & Randomness helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
 bool ClientStore::derivePasswordKey(const std::string& password,
                                     const std::vector<uint8_t>& salt,
                                     std::vector<uint8_t>& outKey)
@@ -309,10 +291,6 @@ bool ClientStore::randomBytes(size_t numBytes, std::vector<uint8_t>& out) {
     CLS_LOG("random") << "done (success=" << (ok ? "yes" : "no") << ")";
     return ok;
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Registration: wrap a new KeyBundle under password (Argon2id → AES-CTR)
-// ──────────────────────────────────────────────────────────────────────────────
 
 void ClientStore::setUserWithPassword(const std::string& username,
                                       const std::string& password,
@@ -384,11 +362,6 @@ void ClientStore::setUserWithPassword(const std::string& username,
     CLS_LOG("register") << "user stored in memory; calling save()";
     save();
 }
-
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Login: decrypt the stored MEK and private KeyBundle under (username, password)
-// ──────────────────────────────────────────────────────────────────────────────
 
 bool ClientStore::loginAndDecrypt(const std::string& username,
                                   const std::string& password,

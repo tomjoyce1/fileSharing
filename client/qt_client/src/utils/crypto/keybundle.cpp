@@ -265,11 +265,6 @@ KeyBundle KeyBundle::fromJson(const std::string& jsonStr)
 }
 
 
-
-
-//───────────────────────────────────────────────────────────────────────────────
-//  fromJsonPrivate(...) ← parse public+private keys from the JSON we wrote in toJsonPrivate()
-//───────────────────────────────────────────────────────────────────────────────
 KeyBundle KeyBundle::fromJsonPrivate(const nlohmann::json& j) {
     // Now the JSON looks like:
     // {

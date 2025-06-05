@@ -9,10 +9,6 @@ struct Config {
     // The one‐and‐only instance
     static Config& instance();
 
-    // std::string serverHost = "localhost";
-    // int serverPort = 3000;
-    // std::string caBundle   = "cacert.pem";
-
     std::string serverHost = "packetsniffers.gobbler.info";
     int serverPort = 443;
     std::string caBundle   = "cacert.pem";

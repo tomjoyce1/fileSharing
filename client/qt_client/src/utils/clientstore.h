@@ -146,7 +146,6 @@ public:
      */
     void clearUser();
 
-    // ──────────────────────────────────────────────────────────────────────────
 
     /**
      * Once a user is logged in, we store “which files” they own → FileClientData.
@@ -167,18 +166,16 @@ public:
 
 private:
     // Full path to the JSON file, e.g. "/home/alice/.ssshare/client_store.json"
-    std::string             m_path;
-    mutable std::mutex      m_mutex;
+    std::string m_path;
+    mutable std::mutex m_mutex;
 
     // In-memory data:
-    std::optional<UserInfo>                      m_user;   // populated only after login
+    std::optional<UserInfo> m_user;   // populated only after login
     std::unordered_map<uint64_t, FileClientData> m_files;  // file_id → FileClientData
 
     // Helpers to (de)serialize to/from JSON.  Caller holds m_mutex before calling.
-    nlohmann::json        to_json() const;
-    void                  from_json(const nlohmann::json& j);
-
-    // ──────────────────────────────────────────────────────────────────────────
+    nlohmann::json to_json() const;
+    void from_json(const nlohmann::json& j);
 
     /**
      * Internal helper: Argon2id(password, salt) → 32-byte key.

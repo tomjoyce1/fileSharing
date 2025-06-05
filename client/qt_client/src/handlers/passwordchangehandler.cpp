@@ -4,18 +4,16 @@
 #include <QMetaObject>
 #include <QDebug>
 
-/* ───────── ctor ───────── */
 PasswordChangeHandler::PasswordChangeHandler(ClientStore* store,
                                              QObject* parent)
     : QObject(parent)
     , m_store(store)
 {}
 
-/* ───────── slot exposed to QML (now only two args) ───────── */
 void PasswordChangeHandler::changePassword(const QString& newPwd,
                                            const QString& confirmPwd)
 {
-    /* ❶ GUI-thread sanity checks */
+    /* GUI-thread sanity checks */
     if (newPwd.isEmpty() || confirmPwd.isEmpty()) {
         emit changeResult("Error", "All fields are required");
         return;
@@ -25,7 +23,7 @@ void PasswordChangeHandler::changePassword(const QString& newPwd,
         return;
     }
 
-    /* ❷ heavy lifting in a worker thread */
+    /* heavy lifting in a worker thread */
     auto fut = QtConcurrent::run([=] { doChange(newPwd); });
 
     auto *watch = new QFutureWatcher<void>(this);
@@ -34,7 +32,6 @@ void PasswordChangeHandler::changePassword(const QString& newPwd,
     watch->setFuture(fut);
 }
 
-/* ───────── background worker (only newPwd) ───────── */
 void PasswordChangeHandler::doChange(const QString& newPwd)
 {
     // We pass `""` as oldPassword because ClientStore already has the MEK in memory.

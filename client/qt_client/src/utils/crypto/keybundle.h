@@ -57,14 +57,10 @@ public:
     static KeyBundle fromJson(const std::string& jsonStr);               // parses public‐only JSON
     static KeyBundle fromJsonPrivate(const nlohmann::json& j);           // parses public+private JSON
 
-    // ── Accessors for _public_ keys ─────────────────────────────────────────
     const std::vector<uint8_t>& getX25519Pub()    const { return x25519Pub_; }
     const std::vector<uint8_t>& getEd25519Pub()   const { return ed25519Pub_; }
     const std::vector<uint8_t>& getDilithiumPub() const { return dilithiumPub_; }
 
-    // ── Accessors for _private_ keys (base64‐encoded) ────────────────────────
-    // We return them *already* base64‐encoded because that is the easiest for FileUploadHandler.
-    // If you need raw bytes instead, call KeyBundle::fromBase64( getEd25519PrivB64() ).
     std::string getX25519PrivateKeyBase64()   const { return toBase64(x25519Priv_);   }
     std::string getEd25519PrivateKeyBase64()  const { return toBase64(ed25519Priv_);  }
     std::string getDilithiumPrivateKeyBase64()const { return toBase64(dilithiumPriv_);}
@@ -72,7 +68,7 @@ public:
 private:
     // ── Public keys (all binary) ─────────────────────────────────────────────
     std::vector<uint8_t> x25519Pub_;     // 32 bytes
-    std::vector<uint8_t> ed25519Pub_;    // crypto_sign_PUBLICKEYBYTES (32) + 32 (seed?), depending on format
+    std::vector<uint8_t> ed25519Pub_;    // crypto_sign_PUBLICKEYBYTES (32) + 32 (seed?)
     std::vector<uint8_t> dilithiumPub_;  // OQS_SIG_dilithium_5_length
 
     // ── Private keys (all binary) ────────────────────────────────────────────
@@ -80,7 +76,6 @@ private:
     std::vector<uint8_t> ed25519Priv_;   // crypto_sign_SECRETKEYBYTES (64)
     std::vector<uint8_t> dilithiumPriv_; // OQS_SIG_dilithium_5_length
 
-    //───────────────────────────────────────────────────────────────────────────
     // Static helpers for Base64 <--> raw binary
     static std::string toBase64(const std::vector<uint8_t>& data);
     static std::vector<uint8_t> fromBase64(
