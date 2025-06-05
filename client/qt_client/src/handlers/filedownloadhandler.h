@@ -1,4 +1,3 @@
-// FileDownloadHandler.h -----------------------------------------------------
 #pragma once
 
 #include <QObject>
@@ -28,33 +27,28 @@
  */
 class FileDownloadHandler : public QObject {
     Q_OBJECT
+
 public:
     explicit FileDownloadHandler(ClientStore *store, QObject *parent = nullptr);
     ~FileDownloadHandler() override = default;
 
-    /** Triggered from QML */
     Q_INVOKABLE void downloadFile(qulonglong fileId);
     Q_INVOKABLE bool saveToFile(const QString &path, const QByteArray &data);
     bool saveToDownloads(const QString& fileName, const QByteArray& data);
 
 signals:
-    /** title = "Success" | "Error" | "Exception"; message = user-friendly */
+    //title = "Success" | "Error" | "Exception"; message = user-friendly
     void downloadResult(const QString &title, const QString &message);
-    /** Emitted only on success with decrypted content */
+
+    // Used for toast notifcation (not implemented yet
     void fileReady(qulonglong fileId, const QString &fileName, const QByteArray &plainData);
 
 private:
-    /** Background worker for a single file */
+    // Background worker for a single file
     void processSingleFile(qulonglong fileId);
 
-    /** Re-compute canonical string and verify both signatures */
-    bool verifySignatures(const std::string &username,
-                          const std::string &fileB64,
-                          const std::string &metaB64,
-                          const std::string &edSigB64,
-                          const std::string &pqSigB64,
-                          const KeyBundle   &pubBundle,
-                          std::string       &outError);
+    // Re-computes canonical string and verify both signatures
+    bool verifySignatures(const std::string &username, const std::string &fileB64, const std::string &metaB64, const std::string &edSigB64, const std::string &pqSigB64, const KeyBundle &pubBundle,std::string &outError);
 
     ClientStore *store;
 };

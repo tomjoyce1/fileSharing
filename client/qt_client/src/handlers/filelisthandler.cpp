@@ -1,14 +1,9 @@
-// FileListHandler.cpp
-
 #include "FileListHandler.h"
 #include "../utils/networking/AsioHttpClient.h"       // Your synchronous HTTP/1.1 client wrapper
 #include "../utils/NetworkAuthUtils.h"     // For makeAuthHeaders(...)
 #include <QDebug>
-#include <sstream>
-#include <iomanip>
 #include <map>
 
-// For convenience
 using json = nlohmann::json;
 
 FileListHandler::FileListHandler(ClientStore* store, QObject* parent)
@@ -25,26 +20,26 @@ FileListHandler::FileListHandler(ClientStore* store, QObject* parent)
     // Extract username and private KeyBundle
     const auto& info = *userOpt;
     m_username   = QString::fromStdString(info.username);
-    m_privBundle = info.fullBundle;  // Contains x25519Priv, ed25519Priv, pqPriv, etc.
+    m_privBundle = info.fullBundle;
 }
 
 void FileListHandler::listAllFiles(int page) {
-    fetchPage(page, /*onlyOwned=*/false, /*onlyShared=*/false);
+    fetchPage(page, false, false);
 }
 
 void FileListHandler::listOwnedFiles(int page) {
-    fetchPage(page, /*onlyOwned=*/true,  /*onlyShared=*/false);
+    fetchPage(page, true, false);
 }
 
 void FileListHandler::listSharedFiles(int page) {
-    fetchPage(page, /*onlyOwned=*/false, /*onlyShared=*/true);
+    fetchPage(page, false, true);
 }
 
 void FileListHandler::fetchPage(int page, bool onlyOwned, bool onlyShared) {
-    // 1) Build POST body
+    // Build POST body
     std::string bodyStr = buildPostBody(page);
 
-    // 2) Create signed headers
+    // Create Canonical String
     auto headersMap = NetworkAuthUtils::makeAuthHeaders(
         m_username.toStdString(),
         m_privBundle,
@@ -52,10 +47,9 @@ void FileListHandler::fetchPage(int page, bool onlyOwned, bool onlyShared) {
         "/api/fs/list",
         bodyStr
         );
-    // Ensure "Content-Type: application/json"
     headersMap["Content-Type"] = "application/json";
 
-    // 3) Send the HTTP request
+    // Send the HTTP request
     QString httpError;
     auto maybeJson = sendListRequest(bodyStr, headersMap, httpError);
     if (!maybeJson.has_value()) {
@@ -64,7 +58,7 @@ void FileListHandler::fetchPage(int page, bool onlyOwned, bool onlyShared) {
     }
     json fullResp = *maybeJson;
 
-    // 4) Validate that “fileData” exists and is an array
+    // Validate that “fileData” exists and is an array
     if (!fullResp.contains("fileData") || !fullResp["fileData"].is_array()) {
         QString errMsg = "Malformed response: missing fileData[]";
         qWarning() << "[FileList]" << errMsg;
@@ -72,10 +66,10 @@ void FileListHandler::fetchPage(int page, bool onlyOwned, bool onlyShared) {
         return;
     }
 
-    // 5) Process the array into a QVariantList
+    // Process the array into a QVariantList
     auto decryptedList = processFileArray(fullResp["fileData"], onlyOwned, onlyShared);
 
-    // 6) Emit results (even if empty)
+    // Emit results
     emit filesLoaded(decryptedList);
 }
 
@@ -91,7 +85,7 @@ std::optional<json> FileListHandler::sendListRequest(
     QString& outError
     ) {
     AsioHttpClient client;
-    client.init("");  // rely on default host/port from config
+    client.init("");
 
     // Build and send the request
     HttpRequest req(
@@ -152,14 +146,14 @@ QVariantList FileListHandler::processFileArray(
 std::optional<QVariantMap> FileListHandler::decryptSingleToVariant(
     const json& singleFileJson
     ) {
-    // 1) Parse & decrypt into our intermediate struct
+    // Parse & decrypt into our intermediate struct
     auto maybeDec = parseAndDecryptSingle(singleFileJson);
     if (!maybeDec.has_value()) {
         return std::nullopt;
     }
     const DecryptedFile& df = *maybeDec;
 
-    // 2) Build a QVariantMap with exactly the keys QML expects
+    // Build a QVariantMap with exactly the keys QML expects
     QVariantMap singleMap;
     singleMap["file_id"]     = (qulonglong) df.file_id;
     singleMap["filename"]    = df.filename;
@@ -172,13 +166,6 @@ std::optional<QVariantMap> FileListHandler::decryptSingleToVariant(
     return singleMap;
 }
 
-
-//------------------------------------------------------------------------------
-// parseAndDecryptSingle(...) and unwrapKeysFromJson(...) are extracted mostly
-// verbatim from your existing implementation, with only minimal re-formatting
-// to fit into this new structure. No logic was changed.
-//------------------------------------------------------------------------------
-
 std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
     const json& singleFileJson
     ) {
@@ -188,7 +175,7 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
     result.is_shared = singleFileJson.contains("shared_access");
     result.shared_from.clear();
 
-    // 1) Retrieve local FileClientData for this file_id
+    // Retrieve local FileClientData for this file_id
     FileClientData* fcdPtr = m_store->getFileData(result.file_id);
     if (fcdPtr == nullptr) {
         qWarning() << "[FileList] No local FileClientData for file_id="
@@ -197,7 +184,6 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
     }
     FileClientData fcd = *fcdPtr;  // copy the struct
 
-    // 2) Determine which MEK and metadata_nonce to use
     std::vector<uint8_t> finalMEK(32);
     std::vector<uint8_t> iv_metadata(16);
 
@@ -208,33 +194,10 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
                                            fcd.metadata_nonce.end());
     }
     else {
-        // If it’s shared to us, unwrap FEK/MEK from the shared_access block
-        auto [rawFEK, rawMEK] = unwrapKeysFromJson(singleFileJson, m_privBundle);
-        Q_UNUSED(rawFEK); // for listing metadata, we only need MEK right now
-
-        finalMEK = rawMEK;
-
-        // The server’s JSON has a base64‐encoded metadata_nonce under shared_access
-        std::string b64_metaNonce =
-            singleFileJson["shared_access"]["metadata_nonce"].get<std::string>();
-
-        std::vector<uint8_t> decodedMetaNonce =
-            FileClientData::base64_decode(b64_metaNonce);
-        if (decodedMetaNonce.size() != FileClientData::PUBLIC_NONCE_LEN) {
-            qWarning() << "[FileList] Invalid metadata_nonce length in shared_access";
-            return std::nullopt;
-        }
-        iv_metadata = decodedMetaNonce;
-
-        // Optionally record who shared it (if the server returned “shared_by”)
-        if (singleFileJson["shared_access"].contains("shared_by")) {
-            result.shared_from = QString::fromStdString(
-                singleFileJson["shared_access"]["shared_by"].get<std::string>()
-                );
-        }
+        // TODO: handle shared files
     }
 
-    // 3) Base64‐decode “metadata” ciphertext, then AES-CTR‐decrypt with finalMEK + iv_metadata
+    // Base64‐decode “metadata” ciphertext, then AES-CTR‐decrypt with finalMEK + iv_metadata
     std::string metaB64 = singleFileJson.at("metadata").get<std::string>();
     std::vector<uint8_t> metaCipherBytes = FileClientData::base64_decode(metaB64);
 
@@ -252,9 +215,8 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
         return std::nullopt;
     }
 
-    // 4) Parse the plaintext JSON of metadata
-    std::string metaJsonStr(reinterpret_cast<char*>(ptxt.data.data()),
-                            ptxt.data.size());
+    // Parse the plaintext JSON of metadata
+    std::string metaJsonStr(reinterpret_cast<char*>(ptxt.data.data()), ptxt.data.size());
 
     json metaJson;
     try {
@@ -266,17 +228,13 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
         return std::nullopt;
     }
 
-    qDebug() << "[FileList] Decrypted metadata for file_id="
-             << result.file_id
-             << ":" << QString::fromStdString(metaJson.dump());
-
     // Fill out filename + size
     result.filename   = QString::fromStdString(
         metaJson.at("filename").get<std::string>()
         );
     result.size_bytes = metaJson.at("filesize").get<uint64_t>();
 
-    // 5) timestamp: prefer metadata, else fallback to server’s field
+    // timestamp: prefer metadata, else fallback to server’s field
     if (metaJson.contains("upload_timestamp")) {
         std::string ts = metaJson["upload_timestamp"].get<std::string>();
         QDateTime dt = QDateTime::fromString(QString::fromStdString(ts), Qt::ISODate);
@@ -295,36 +253,29 @@ std::optional<DecryptedFile> FileListHandler::parseAndDecryptSingle(
 }
 
 std::pair<std::vector<uint8_t>, std::vector<uint8_t>>
-FileListHandler::unwrapKeysFromJson(
-    const json& singleFileJson,
-    const KeyBundle&      privBundle
-    ) {
-    // 1) Base64‐decode the server’s ephemeral_public_key (32‐byte X25519 public)
-    std::string b64_ephPub =
-        singleFileJson["shared_access"]["ephemeral_public_key"].get<std::string>();
+FileListHandler::unwrapKeysFromJson(const json& singleFileJson, const KeyBundle& privBundle) {
+
+    // Base64‐decode the server’s ephemeral_public_key (32‐byte X25519 public)
+    std::string b64_ephPub = singleFileJson["shared_access"]["ephemeral_public_key"].get<std::string>();
     std::vector<uint8_t> ephPub = FileClientData::base64_decode(b64_ephPub);
     if (ephPub.size() != crypto_scalarmult_BYTES) {
         throw std::runtime_error("unwrapKeysFromJson: invalid ephemeral_public_key length");
     }
 
-    // 2) Base64‐decode our own x25519 private key (32 bytes)
+    // Base64‐decode our own x25519 private key (32 bytes)
     std::string x25519PrivB64 = privBundle.getX25519PrivateKeyBase64();
     std::vector<uint8_t> x25519Priv = FileClientData::base64_decode(x25519PrivB64);
     if (x25519Priv.size() != crypto_scalarmult_SCALARBYTES) {
         throw std::runtime_error("unwrapKeysFromJson: invalid x25519 private key length");
     }
 
-    // 3) Perform ECDH: sharedSecret = X25519(x25519Priv, ephPub)
+    // Perform ECDH: sharedSecret = X25519(x25519Priv, ephPub)
     std::vector<uint8_t> sharedSecret(crypto_scalarmult_BYTES);
-    if (crypto_scalarmult(
-            sharedSecret.data(),
-            x25519Priv.data(),
-            ephPub.data()
-            ) != 0) {
+    if (crypto_scalarmult(sharedSecret.data(), x25519Priv.data(), ephPub.data()) != 0) {
         throw std::runtime_error("unwrapKeysFromJson: X25519 ECDH failed");
     }
 
-    // 4a) Decrypt the FEK (32 bytes) under sharedSecret (AES-256-CTR)
+    // Decrypt the FEK (32 bytes) under sharedSecret (AES-256-CTR)
     std::string b64_encFEK   = singleFileJson["shared_access"]["encrypted_fek"].get<std::string>();
     std::string b64_nonceFEK = singleFileJson["shared_access"]["encrypted_fek_nonce"].get<std::string>();
     std::vector<uint8_t> encFEK   = FileClientData::base64_decode(b64_encFEK);
@@ -347,7 +298,7 @@ FileListHandler::unwrapKeysFromJson(
         throw std::runtime_error("unwrapKeysFromJson: FEK decrypted to wrong length");
     }
 
-    // 4b) Decrypt the MEK (32 bytes) under sharedSecret (AES-256-CTR)
+    // Decrypt the MEK (32 bytes) under sharedSecret (AES-256-CTR)
     std::string b64_encMEK   = singleFileJson["shared_access"]["encrypted_mek"].get<std::string>();
     std::string b64_nonceMEK = singleFileJson["shared_access"]["encrypted_mek_nonce"].get<std::string>();
     std::vector<uint8_t> encMEK   = FileClientData::base64_decode(b64_encMEK);
@@ -370,7 +321,7 @@ FileListHandler::unwrapKeysFromJson(
         throw std::runtime_error("unwrapKeysFromJson: MEK decrypted to wrong length");
     }
 
-    // 5) Return <FEK, MEK> as two raw 32-byte vectors
+    // Return <FEK, MEK> as two raw 32-byte vectors
     std::vector<uint8_t> rawFEK(fekPtxt.data.begin(), fekPtxt.data.end());
     std::vector<uint8_t> rawMEK(mekPtxt.data.begin(), mekPtxt.data.end());
     return { rawFEK, rawMEK };
