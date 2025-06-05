@@ -11,6 +11,7 @@
 #include "handlers/FileListHandler.h"
 #include "handlers/filedownloadhandler.h"
 #include "utils/ClientStore.h"
+#include "utils/networking/asiosslclient.h"
 
 static QString defaultStorePath() {
 #ifdef Q_OS_WIN
@@ -24,6 +25,8 @@ int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle("Material");  // Use Material style
+
+
 
     // 1) Load (or create) the ClientStore
     QString storeFile = defaultStorePath();
@@ -43,6 +46,14 @@ int main(int argc, char *argv[])
     FileUploadHandler* uploadHandler   = nullptr;
     FileListHandler*   fileListHandler = nullptr;
     FileDownloadHandler* downloadHandler = nullptr;
+
+    auto &cfg = Config::instance();
+    QString absPem = QDir(QCoreApplication::applicationDirPath())
+                         .filePath(QString::fromStdString(cfg.caBundle));
+    cfg.caBundle = absPem.toStdString();
+
+    AsioSslClient httpClient;
+    httpClient.init(Config::instance().caBundle);
 
     // 5) Once login succeeds, construct + expose FileUploadHandler & FileListHandler
     QObject::connect(

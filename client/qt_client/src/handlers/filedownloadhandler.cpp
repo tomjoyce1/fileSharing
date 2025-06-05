@@ -1,4 +1,6 @@
 #include "FileDownloadHandler.h"
+#include "../utils/networking/asiosslclient.h"
+#include "../config.h"
 #include <QMetaObject>
 #include <QDebug>
 #include <QFile>
@@ -83,7 +85,8 @@ void FileDownloadHandler::processSingleFile(qulonglong fileId)
 
     // HTTP POST
     HttpRequest req(HttpRequest::Method::POST, "/api/fs/download", bodyStr, headers);
-    AsioHttpClient client; client.init("");
+
+    AsioSslClient  client;
     HttpResponse resp = client.sendRequest(req);
 
     if (resp.statusCode != 200) {

@@ -79,6 +79,8 @@ endif()
 find_package(nlohmann_json REQUIRED)
 
 
+
+
 # ─────────────────────────────────────────────────────────────
 # 6) Add your executable
 add_executable(qt_client
@@ -138,6 +140,16 @@ target_include_directories(qt_client PRIVATE
     "${OPENSSL_INCLUDE_DIR}"
     "${SODIUM_INCLUDE_DIR}"
     "${OQS_INCLUDE_DIR}"
+)
+
+set(CACERT_PEM "${CMAKE_CURRENT_SOURCE_DIR}/src/cacert.pem")
+
+add_custom_command(
+    TARGET qt_client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CACERT_PEM}"
+            $<TARGET_FILE_DIR:qt_client>/cacert.pem
+    COMMENT "Copying cacert.pem → output folder"
 )
 
 qt6_add_resources(qt_client

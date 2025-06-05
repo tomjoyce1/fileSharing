@@ -3,6 +3,7 @@
 #include <QMetaObject>
 #include <nlohmann/json.hpp>
 #include "../utils/networking/HttpResponse.h"
+#include "../utils/networking/asiosslclient.h"
 
 RegisterHandler::RegisterHandler(ClientStore *store, QObject *parent)
     : QObject(parent),
@@ -63,8 +64,7 @@ void RegisterHandler::doRegister(QString username, QString password)
         );
 
     /* ❹  Send synchronously using the new overload.  No need to pass host/port. */
-    AsioHttpClient httpClient;
-    httpClient.init(""); // no TLS
+    AsioSslClient httpClient; // 🔒 HTTPS
 
     // This version of sendRequest(...) pulls host/port from Config::instance():
     HttpResponse resp = httpClient.sendRequest(req);

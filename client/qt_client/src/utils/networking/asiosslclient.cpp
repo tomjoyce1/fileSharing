@@ -1,252 +1,169 @@
 #include "AsioSslClient.h"
 #include <boost/asio/connect.hpp>
-#include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
-#include <openssl/ssl.h> // For SSL_set_tlsext_host_name
-#include <sstream>
-#include <iostream>
+#include <openssl/ssl.h>         // SSL_set_tlsext_host_name
 #include <filesystem>
+#include <sstream>
+#include <QDebug>
+#include <boost/asio/ssl/host_name_verification.hpp>
+#include "../../config.h"
+
+/*────────────────────────   ctor / dtor   ────────────────────────*/
 
 AsioSslClient::AsioSslClient()
-    : ioContext_(std::make_shared<boost::asio::io_context>()),
-    sslContext_(std::make_shared<boost::asio::ssl::context>(boost::asio::ssl::context::tlsv12_client)),
-    resolver_(std::make_shared<boost::asio::ip::tcp::resolver>(*ioContext_)),
-    sslStream_(nullptr)
+    : io_(std::make_shared<boost::asio::io_context>()),
+    resolver_(std::make_shared<boost::asio::ip::tcp::resolver>(*io_))
 {
-    // We require peer verification of the server certificate:
-    sslContext_->set_verify_mode(boost::asio::ssl::verify_peer);
-    // Do NOT load default verify paths here: caller must call init(caCertPath).
+    if (!s_ctx_) {                                     // first client in the app
+        s_ctx_ = std::make_shared<boost::asio::ssl::context>(
+            boost::asio::ssl::context::tls_client);
+        s_ctx_->set_verify_mode(boost::asio::ssl::verify_peer);
+    }
+    sslCtx_ = s_ctx_;                                  // just a cheap copy
 }
 
-AsioSslClient::~AsioSslClient() {
+
+AsioSslClient::~AsioSslClient()
+{
     try {
-        if (sslStream_ && sslStream_->next_layer().is_open()) {
-            sslStream_->shutdown();
-            sslStream_->lowest_layer().close();
+        if (stream_ && stream_->next_layer().is_open()) {
+            stream_->shutdown();
+            stream_->next_layer().close();
         }
-    } catch (...) {
-        // Destructors must not throw
-    }
+    } catch (...) { /* never throw from dtor */ }
 }
 
 
 
-#include <QDebug>              // <--- for qDebug()/qWarning()
+HttpResponse AsioSslClient::makeError(const std::string& why)
+{
+    std::map<std::string, std::string> hdrs;
+    return HttpResponse(500, hdrs, why);
+}
 
-void AsioSslClient::init(const std::string& caCertPath) {
-    if (!caCertPath.empty()) {
-        qDebug() << "[TLS INIT] Attempting to load CA file: "
-                 << QString::fromStdString(caCertPath);
-    } else {
-        qDebug() << "[TLS INIT] No CA path provided — will use system defaults";
-    }
 
-    if (!caCertPath.empty() && std::filesystem::exists(caCertPath)) {
+
+void AsioSslClient::init(const std::string& caPath)
+{
+    if (!caPath.empty())
+        qDebug() << "[TLS INIT] loading CA bundle from"
+                 << QString::fromStdString(caPath);
+    else
+        qDebug() << "[TLS INIT] using system default trust-store";
+
+    if (!caPath.empty() && std::filesystem::exists(caPath)) {
         boost::system::error_code ec;
-        sslContext_->load_verify_file(caCertPath, ec);
-        if (ec) {
-            qWarning() << "[TLS INIT] ERROR loading CA file:"
-                       << QString::fromStdString(caCertPath)
-                       << "–" << ec.message().c_str();
-            throw std::runtime_error(
-                "Failed to load CA file \"" + caCertPath + "\": " + ec.message());
-        }
-        qDebug() << "[TLS INIT] Successfully loaded CA from:"
-                 << QString::fromStdString(caCertPath);
+        sslCtx_->load_verify_file(caPath, ec);
+        if (ec)
+            throw std::runtime_error("load_verify_file: " + ec.message());
+    } else {
+        sslCtx_->set_default_verify_paths();
     }
-    else {
-        if (!caCertPath.empty()) {
-            qWarning() << "[TLS INIT] CA file does not exist:"
-                       << QString::fromStdString(caCertPath);
-        }
-        qDebug() << "[TLS INIT] Falling back to default verify paths";
-        sslContext_->set_default_verify_paths();
-    }
-
-    sslContext_->set_verify_mode(boost::asio::ssl::verify_peer);
 }
 
-HttpResponse AsioSslClient::sendRequest(
-    const std::string& host,
-    int                 port,
-    const HttpRequest&  request,
-    int                 timeoutSeconds
-    ) {
+HttpResponse AsioSslClient::sendRequest(const std::string& host,
+                                        int                port,
+                                        const HttpRequest& request,
+                                        int timeoutSeconds)
+{
+    // we only moved the code, so just call the new helper
+    return sendRequest(request, timeoutSeconds);
+}
+/*──────────────────────  sendRequest()  ──────────────────────────*/
+
+HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
+                                        int timeoutSeconds)
+{
+    const auto& cfg = Config::instance();
+     std::string host = cfg.serverHost;
+    int port =  cfg.serverPort;
+
     boost::system::error_code ec;
 
-    // 1) Resolve hostname → endpoints
-    auto endpoints = resolver_->resolve(host, std::to_string(port), ec);
-    if (ec) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "DNS resolution failed: " + ec.message());
+    /* 1 — DNS  */
+    auto eps = resolver_->resolve(host, std::to_string(port), ec);
+    if (ec) return makeError("DNS failed: " + ec.message());
+
+    /* 2 — socket+TLS  */
+    stream_.reset(new boost::asio::ssl::stream<
+                  boost::asio::ip::tcp::socket>(*io_, *sslCtx_));
+
+    if (!SSL_set_tlsext_host_name(stream_->native_handle(), host.c_str()))
+        return makeError("SNI set failed");
+
+    /* 3 — TCP connect  */
+    boost::asio::connect(stream_->next_layer(), eps, ec);
+    if (ec) return makeError("connect: " + ec.message());
+
+    /* 4 — TLS handshake (performs certificate + hostname check) */
+    stream_->set_verify_callback(boost::asio::ssl::host_name_verification(host));    // ⭐ hostname ✔
+    stream_->handshake(boost::asio::ssl::stream_base::client, ec);
+    if (ec) return makeError("TLS handshake: " + ec.message());
+
+    /* 5 — send HTTP/1.1 request  */
+    std::string rawReq = request.toString();
+    boost::asio::write(*stream_, boost::asio::buffer(rawReq), ec);
+    if (ec) return makeError("write: " + ec.message());
+
+    /* 6 — read headers  */
+    boost::asio::streambuf buf;
+    boost::asio::read_until(*stream_, buf, "\r\n\r\n", ec);
+    if (ec && ec != boost::asio::error::eof)
+        return makeError("read_until: " + ec.message());
+
+    /* 7 — parse status-line + headers (identical to your old code) */
+    std::istream respStream(&buf);
+
+    std::string statusLine; std::getline(respStream, statusLine);
+    int status = 0; { std::istringstream ss(statusLine); std::string tmp; ss >> tmp >> status; }
+
+    std::map<std::string,std::string> hdr;
+    std::string line;
+    while (std::getline(respStream,line) && line!="\r") {
+        auto pos = line.find(':');
+        if (pos == std::string::npos) continue;
+        std::string k = line.substr(0,pos);
+        std::string v = line.substr(pos+2);         // skip ": "
+        if (!v.empty() && v.back()=='\r') v.pop_back();
+        hdr[k]=v;
     }
 
-    // 2) (Re)create SSL stream wrapping a fresh tcp::socket
-    sslStream_.reset(
-        new boost::asio::ssl::stream<boost::asio::ip::tcp::socket>(*ioContext_, *sslContext_)
-        );
-
-    // 2a) Set SNI so server cert matches "host"
-    if (!SSL_set_tlsext_host_name(sslStream_->native_handle(), host.c_str())) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "Failed to set SNI hostname");
-    }
-
-    // 3) Connect TCP
-    boost::asio::connect(sslStream_->next_layer(), endpoints, ec);
-    if (ec) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "TCP connect failed: " + ec.message());
-    }
-
-    // 4) TLS handshake
-    sslStream_->handshake(boost::asio::ssl::stream_base::client, ec);
-    if (ec) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "TLS handshake failed: " + ec.message());
-    }
-
-    // 5) Serialize HttpRequest → rawRequest
-    std::string rawRequest = request.toString();
-
-    // 6) Write to SSL stream
-    boost::asio::write(*sslStream_, boost::asio::buffer(rawRequest), ec);
-    if (ec) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "SSL write failed: " + ec.message());
-    }
-
-    // 7) Read until end of headers ("\r\n\r\n")
-    boost::asio::streambuf responseBuf;
-    boost::asio::read_until(*sslStream_, responseBuf, "\r\n\r\n", ec);
-    if (ec && ec != boost::asio::error::eof) {
-        std::map<std::string, std::string> emptyHeaders;
-        return HttpResponse(500, emptyHeaders, "SSL read_until failed: " + ec.message());
-    }
-
-    // 8) Parse status line + headers
-    std::istream responseStream(&responseBuf);
-    std::string statusLine;
-    std::getline(responseStream, statusLine); // e.g. "HTTP/1.1 200 OK"
-    int statusCode = 0;
-    {
-        std::istringstream iss(statusLine);
-        std::string httpVer;
-        iss >> httpVer >> statusCode;
-    }
-
-    std::map<std::string, std::string> responseHeaders;
-    std::string headerLine;
-    while (std::getline(responseStream, headerLine) && headerLine != "\r") {
-        auto sep = headerLine.find(':');
-        if (sep != std::string::npos) {
-            std::string key   = headerLine.substr(0, sep);
-            std::string value = headerLine.substr(sep + 2);
-            if (!value.empty() && value.back() == '\r') {
-                value.pop_back();
-            }
-            responseHeaders[key] = value;
-        }
-    }
-
-    // --- detect chunked -------------------------------------------------------
+    /* 8 — body (either chunked or Content-Length) — reused logic */
     bool chunked = false;
-    auto teIter = responseHeaders.find("Transfer-Encoding");
-    if (teIter != responseHeaders.end()) {
-        std::string val = teIter->second;
-        std::transform(val.begin(), val.end(), val.begin(), ::tolower);
-        chunked = val.find("chunked") != std::string::npos;
+    if (auto it=hdr.find("Transfer-Encoding"); it!=hdr.end()) {
+        std::string v = it->second; std::transform(v.begin(),v.end(),v.begin(),::tolower);
+        chunked = v.find("chunked")!=std::string::npos;
     }
-
-
-    // 9) Content-Length if present
-    std::size_t contentLength = 0;
-    auto it = responseHeaders.find("Content-Length");
-    if (it != responseHeaders.end()) {
-        try {
-            contentLength = std::stoul(it->second);
-        } catch (...) {
-            contentLength = 0;
-        }
-    }
-
+    std::size_t len = 0;
+    if (auto it=hdr.find("Content-Length"); it!=hdr.end())
+        len = std::stoul(it->second);
 
     std::string body;
-
     if (chunked) {
-        // --- very small chunked-decoder --------------------------------------
         while (true) {
-            std::string sizeLine;
-            std::getline(responseStream, sizeLine);       // "<hex>\r"
-            if (!sizeLine.empty() && sizeLine.back() == '\r')
-                sizeLine.pop_back();
-            std::size_t chunkSize = std::stoul(sizeLine, nullptr, 16);
-            if (chunkSize == 0) break;                    // last chunk
-
-            std::vector<char> chunk(chunkSize);
-            responseStream.read(chunk.data(), chunkSize);
-            body.append(chunk.data(), chunkSize);
-
-            responseStream.ignore(2);                     // skip trailing \r\n
+            std::string sz; std::getline(respStream,sz); if (!sz.empty()&&sz.back()=='\r') sz.pop_back();
+            std::size_t n = std::stoul(sz,nullptr,16); if (!n) { respStream.ignore(2); break; }
+            std::vector<char> tmp(n); respStream.read(tmp.data(),n); body.append(tmp.data(),n); respStream.ignore(2);
         }
-        // ignore optional trailer headers + final CRLF (already consumed)
-    }
-    else {
-        if (contentLength > 0) {
-            std::size_t alreadyInBuf = responseBuf.size();
-            if (alreadyInBuf >= contentLength) {
-                std::vector<char> tmp(contentLength);
-                responseStream.read(tmp.data(), contentLength);
-                body.assign(tmp.data(), contentLength);
-            } else {
-                std::vector<char> tmpIn(alreadyInBuf);
-                responseStream.read(tmpIn.data(), alreadyInBuf);
-                body.assign(tmpIn.data(), alreadyInBuf);
-
-                std::size_t remaining = contentLength - alreadyInBuf;
-                std::vector<char> tmpRest(remaining);
-                boost::asio::read(*sslStream_, boost::asio::buffer(tmpRest), ec);
-                if (ec && ec != boost::asio::error::eof) {
-                    std::map<std::string, std::string> emptyHeaders;
-                    return HttpResponse(500, emptyHeaders, "SSL read body failed: " + ec.message());
-                }
-                body.append(tmpRest.data(), tmpRest.size());
-            }
-        } else {
-            // No Content-Length: read until EOF
-            boost::system::error_code readEc;
-            std::ostringstream oss;
-            while (true) {
-                char buf[1024];
-                std::size_t n = sslStream_->read_some(boost::asio::buffer(buf), readEc);
-                if (n > 0) {
-                    oss.write(buf, static_cast<std::streamsize>(n));
-                }
-                if (readEc == boost::asio::error::eof) {
-                    break;
-                }
-                if (readEc && readEc != boost::asio::error::would_block) {
-                    std::map<std::string, std::string> emptyHeaders;
-                    return HttpResponse(500, emptyHeaders, "SSL read (EOF) failed: " + readEc.message());
-                }
-            }
-            body = oss.str();
+    } else {
+        std::ostringstream oss; oss << respStream.rdbuf();
+        while (body.size() + buf.size() < len) {         // read rest
+            char tmp[4096]; std::size_t n = stream_->read_some(boost::asio::buffer(tmp), ec);
+            if (!ec) oss.write(tmp, n); else break;
         }
+        body = oss.str();
     }
 
+    /* 9 — build full raw response so you can reuse HttpResponse::fromRaw */
+    std::ostringstream raw;
+    raw << statusLine << "\r\n";
+    for (auto& kv:hdr) raw << kv.first << ": " << kv.second << "\r\n";
+    raw << "\r\n" << body;
 
+    qDebug() << "[HTTPS]" << QString::fromStdString(host)
+             << status << "(" << rawReq.size() << "→" << body.size() << ")";
 
-    // 11) Reconstruct raw response for HttpResponse::fromRaw
-    std::ostringstream fullResp;
-    fullResp << statusLine << "\r\n";
-    for (auto& kv : responseHeaders) {
-        fullResp << kv.first << ": " << kv.second << "\r\n";
-    }
-    fullResp << "\r\n";
-    fullResp << body;
-
-    std::string rawResponse = fullResp.str();
-    return HttpResponse::fromRaw(rawResponse);
+    return HttpResponse::fromRaw(raw.str());
 }

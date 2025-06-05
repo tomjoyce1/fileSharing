@@ -1,5 +1,6 @@
 #include "FileListHandler.h"
-#include "../utils/networking/AsioHttpClient.h"
+#include "../utils/networking/asiosslclient.h"
+#include "../config.h"
 #include "../utils/NetworkAuthUtils.h"
 #include "../utils/handlerutils.h"
 #include <QDebug>
@@ -101,7 +102,7 @@ void FileListHandler::deleteFile(qulonglong fileId)
             "POST", "/api/fs/delete", bodyStr);
 
         HttpRequest        req(HttpRequest::Method::POST, "/api/fs/delete", bodyStr, headers);
-        AsioHttpClient     cli; cli.init("");
+        AsioSslClient      cli;
         HttpResponse       resp = cli.sendRequest(req);
 
         if (resp.statusCode != 200) {
@@ -126,8 +127,8 @@ std::optional<json> FileListHandler::sendListRequest(
     const std::map<std::string, std::string>& headers,
     QString& outError
     ) {
-    AsioHttpClient client;
-    client.init("");
+    AsioSslClient client;
+    client.init(Config::instance().caBundle);
 
     // Build and send the request
     HttpRequest req(
