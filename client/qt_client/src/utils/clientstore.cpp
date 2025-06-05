@@ -475,12 +475,7 @@ bool ClientStore::loginAndDecrypt(const std::string& username,
     return true;
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Change password: re-wrap MEK under new password
-// ──────────────────────────────────────────────────────────────────────────────
-
-bool ClientStore::changePassword(const std::string& oldPassword,
-                                 const std::string& newPassword,
+bool ClientStore::changePassword(const std::string& newPassword,
                                  std::string& outError)
 {
     std::lock_guard<std::mutex> locker(m_mutex);
@@ -493,32 +488,14 @@ bool ClientStore::changePassword(const std::string& oldPassword,
     }
     UserInfo& stored = *m_user;
 
-    // 1) Derive K_old = Argon2id(oldPassword, salt)
-    std::vector<uint8_t> K_old(32);
-    if (!derivePasswordKey(oldPassword, stored.salt, K_old)) {
-        outError = "Old password KDF failed";
-        CLS_LOG("changePassword") << "argon2id(old) failed";
+    // 1) Ensure the MEK is already in memory (i.e. loginAndDecrypt() was called).
+    if (stored.masterKey.empty()) {
+        outError = "No decrypted MEK in memory; cannot re-wrap";
+        CLS_LOG("changePassword") << "masterKey empty, login required";
         return false;
     }
 
-    // 2) Decrypt MEK ← AES-CTR(masterEnc, masterNonce, K_old)
-    Symmetric::Plaintext plainMEK = Symmetric::decrypt(
-        stored.masterEnc,  // ciphertext
-        K_old,             // decrypted key from old password
-        stored.masterNonce // IV
-        );
-    CLS_LOG("decrypt") << "changePassword: MEK cipher=" << stored.masterEnc.size()
-                       << " keyLen=" << K_old.size()
-                       << " ivLen=" << stored.masterNonce.size()
-                       << " plainLen=" << plainMEK.data.size();
-    std::vector<uint8_t> MEK = std::move(plainMEK.data);
-    if (MEK.empty()) {
-        outError = "Old password is incorrect (unable to decrypt MEK)";
-        CLS_LOG("changePassword") << "old password decrypt failed";
-        return false;
-    }
-
-    // 3) Generate new salt (16 bytes), derive K_new = Argon2id(newPassword, newSalt)
+    // 2) Generate new salt (16 bytes) and derive K_new = Argon2id(newPassword, newSalt)
     std::vector<uint8_t> newSalt;
     if (!randomBytes(16, newSalt)) {
         outError = "Failed to generate new salt";
@@ -532,25 +509,23 @@ bool ClientStore::changePassword(const std::string& oldPassword,
         return false;
     }
 
-    // 4) Re-encrypt MEK under K_new → newMasterEnc, newMasterNonce
-    Symmetric::Ciphertext c = Symmetric::encrypt(MEK, K_new);
-    CLS_LOG("encrypt") << "changePassword: MEK len=" << MEK.size()
+    // 3) Re-encrypt MEK (in memory) under K_new → newMasterEnc, newMasterNonce
+    Symmetric::Ciphertext c = Symmetric::encrypt(stored.masterKey, K_new);
+    CLS_LOG("encrypt") << "changePassword: MEK len=" << stored.masterKey.size()
                        << " keyLen=" << K_new.size()
-                       << " ivLen=" << c.iv.size();
+                       << " ivLen="  << c.iv.size();
     std::vector<uint8_t> newMasterNonce = std::move(c.iv);
     std::vector<uint8_t> newMasterEnc   = std::move(c.data);
 
-    // 5) Update stored fields: salt, masterNonce, masterEnc
-    stored.salt         = std::move(newSalt);
-    stored.masterNonce  = std::move(newMasterNonce);
-    stored.masterEnc    = std::move(newMasterEnc);
+    // 4) Overwrite stored fields: salt, masterNonce, masterEnc
+    stored.salt        = std::move(newSalt);
+    stored.masterNonce = std::move(newMasterNonce);
+    stored.masterEnc   = std::move(newMasterEnc);
 
-    // Clear K_old, K_new, MEK from memory
-    std::fill(K_old.begin(), K_old.end(), 0);
+    // 5) Zero out K_new in memory
     std::fill(K_new.begin(), K_new.end(), 0);
-    std::fill(MEK.begin(), MEK.end(), 0);
 
-    // 6) Persist changes to disk
+    // 6) Persist everything to disk
     CLS_LOG("changePassword") << "persisting changes via save()";
     save();
     return true;

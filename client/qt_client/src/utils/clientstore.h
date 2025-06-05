@@ -148,8 +148,7 @@ public:
      *
      * After this call, save() is automatically invoked to persist the new salt+masterEnc.
      */
-    bool changePassword(const std::string& oldPassword,
-                        const std::string& newPassword,
+    bool changePassword(const std::string& newPassword,
                         std::string& outError);
 
     /**

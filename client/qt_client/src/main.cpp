@@ -10,6 +10,7 @@
 #include "handlers/FileUploadHandler.h"
 #include "handlers/FileListHandler.h"
 #include "handlers/filedownloadhandler.h"
+#include "handlers/passwordchangehandler.h"
 #include "utils/ClientStore.h"
 #include "utils/networking/asiosslclient.h"
 
@@ -36,11 +37,14 @@ int main(int argc, char *argv[])
     // 2) Create LoginHandler & RegisterHandler (they do NOT need fullBundle yet)
     LoginHandler    loginHandler(&clientStore);
     RegisterHandler registerHandler(&clientStore);
+    PasswordChangeHandler pwdHandler(&clientStore);
 
     // 3) Expose only loginHandler & registerHandler to QML (for the login/register screens)
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("loginHandler",    &loginHandler);
     engine.rootContext()->setContextProperty("registerHandler", &registerHandler);
+    engine.rootContext()->setContextProperty("passwordHandler", &pwdHandler);
+
 
     // 4) Placeholder pointers for upload/list; will create them only on successful login/register
     FileUploadHandler* uploadHandler   = nullptr;
