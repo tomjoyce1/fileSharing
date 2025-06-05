@@ -36,6 +36,9 @@ public:
     Q_INVOKABLE void listOwnedFiles(int page = 1);
     Q_INVOKABLE void listSharedFiles(int page = 1);
 
+    // file delete goes into this handler for simplicity
+    Q_INVOKABLE void deleteFile(qulonglong fileId);
+
 signals:
     // Emitted after a page of files is fetched & decrypted.
     // Each QVariantMap has keys: file_id, filename, size, modified, is_owner, is_shared, shared_from.
@@ -43,6 +46,8 @@ signals:
 
     // Emitted if something goes wrong (e.g. network error, JSON parse error, decryption failure).
     void errorOccurred(const QString& message);
+
+    void deleteResult(const QString& title, const QString& message);
 
 private:
     void fetchPage(int page, bool onlyOwned, bool onlyShared);

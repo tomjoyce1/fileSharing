@@ -1,8 +1,10 @@
 #include "FileListHandler.h"
-#include "../utils/networking/AsioHttpClient.h"       // Your synchronous HTTP/1.1 client wrapper
-#include "../utils/NetworkAuthUtils.h"     // For makeAuthHeaders(...)
+#include "../utils/networking/AsioHttpClient.h"
+#include "../utils/NetworkAuthUtils.h"
+#include "../utils/handlerutils.h"
 #include <QDebug>
 #include <map>
+
 
 using json = nlohmann::json;
 
@@ -76,6 +78,46 @@ void FileListHandler::fetchPage(int page, bool onlyOwned, bool onlyShared) {
 std::string FileListHandler::buildPostBody(int page) const {
     json postBody = { { "page", page } };
     return postBody.dump();
+}
+
+void FileListHandler::deleteFile(qulonglong fileId)
+{
+    HandlerUtils::runAsync([this, fileId]() {
+        auto maybeUser = m_store->getUser();
+        if (!maybeUser.has_value()) {
+            emit errorOccurred("Not logged-in");
+            return;
+        }
+        const auto& user   = *maybeUser;
+        const auto& uname  = user.username;
+        const auto& bundle = user.fullBundle;
+
+        // build Json body
+        nlohmann::json jBody;  jBody["file_id"] = static_cast<uint64_t>(fileId);
+        std::string bodyStr = jBody.dump();
+
+        auto headers = NetworkAuthUtils::makeAuthHeaders(
+            uname, bundle,
+            "POST", "/api/fs/delete", bodyStr);
+
+        HttpRequest        req(HttpRequest::Method::POST, "/api/fs/delete", bodyStr, headers);
+        AsioHttpClient     cli; cli.init("");
+        HttpResponse       resp = cli.sendRequest(req);
+
+        if (resp.statusCode != 200) {
+            emit deleteResult("Error",  "Delete Failed");
+            emit errorOccurred("Delete Failed");
+            return;
+        }
+
+        //success → drop from ClientStore
+        m_store->removeFileData(fileId);
+
+        // Refresh list on the UI thread               */
+        QMetaObject::invokeMethod(this, [this](){ listAllFiles(/*page=*/1); }, Qt::QueuedConnection);
+
+        emit deleteResult("Success", "File deleted successfully");
+    });
 }
 
 
