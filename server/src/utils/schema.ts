@@ -41,6 +41,7 @@ export interface KeyBundlePrivate {
   };
 }
 
+// public key bundle for API/database transport
 export interface KeyBundlePublic {
   preQuantum: {
     identityKemPublicKey: KeyObject;
@@ -51,6 +52,7 @@ export interface KeyBundlePublic {
   };
 }
 
+// file metadata for API/database transport
 export interface FileMetadataListItem {
   file_id: number;
   metadata: string; // base64 encoded encrypted metadata for transport
@@ -68,6 +70,7 @@ export interface FileMetadataListItem {
   };
 }
 
+// API error response structure
 export interface APIError {
   message: string;
   status: number;

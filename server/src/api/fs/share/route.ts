@@ -28,6 +28,7 @@ export const schema = {
   },
 };
 
+// checks if the user owns the file with the given file_id
 async function doesOwnFile(
   file_id: number,
   owner_user_id: number
@@ -53,6 +54,7 @@ async function doesOwnFile(
   }
 }
 
+// retrieves the user ID for a given username
 async function getSharedWithUserId(
   username: string
 ): Promise<Result<number, APIError>> {
@@ -73,6 +75,7 @@ async function getSharedWithUserId(
   }
 }
 
+// checks if a share record already exists for the given owner, shared user, and file
 async function checkExistingShare(
   owner_user_id: number,
   shared_with_user_id: number,
@@ -98,6 +101,7 @@ async function checkExistingShare(
   }
 }
 
+// creates a new share record in the database
 async function createShareRecord(
   owner_user_id: number,
   shared_with_user_id: number,

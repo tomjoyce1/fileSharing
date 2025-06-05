@@ -12,6 +12,7 @@ import type {
 } from "../schema";
 import { z } from "zod";
 
+//generate, serialize, and deserialize key bundles for pre-quantum and post-quantum cryptography
 export function generateKeyBundle(): {
   private: KeyBundlePrivate;
   public: KeyBundlePublic;
@@ -88,6 +89,7 @@ export function generateKeyBundle(): {
   };
 }
 
+// serialize key bundles for public keys
 export function serializeKeyBundlePublic(
   bundle: KeyBundlePublic
 ): z.infer<typeof KeyBundlePublicSerializable> {
@@ -108,6 +110,7 @@ export function serializeKeyBundlePublic(
   };
 }
 
+// deserialize key bundles for public keys
 export function deserializeKeyBundlePublic(
   serialized: z.infer<typeof KeyBundlePublicSerializable>
 ): KeyBundlePublic {
