@@ -9,7 +9,7 @@
 #include "handlers/RegisterHandler.h"
 #include "handlers/FileUploadHandler.h"
 #include "handlers/FileListHandler.h"
-#include "handlers/downloadfilehandler.h"
+#include "handlers/filedownloadhandler.h"
 #include "utils/ClientStore.h"
 
 static QString defaultStorePath() {
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
     // 4) Placeholder pointers for upload/list; will create them only on successful login/register
     FileUploadHandler* uploadHandler   = nullptr;
     FileListHandler*   fileListHandler = nullptr;
-    DownloadFileHandler* downloadHandler = nullptr;
+    FileDownloadHandler* downloadHandler = nullptr;
 
     // 5) Once login succeeds, construct + expose FileUploadHandler & FileListHandler
     QObject::connect(
@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
                 // Now clientStore.getUser()->fullBundle is valid
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
-                downloadHandler = new DownloadFileHandler(&clientStore);
+                downloadHandler = new FileDownloadHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);
@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
 
                 uploadHandler   = new FileUploadHandler(&clientStore);
                 fileListHandler = new FileListHandler(&clientStore);
-                downloadHandler = new DownloadFileHandler(&clientStore);
+                downloadHandler = new FileDownloadHandler(&clientStore);
 
                 engine.rootContext()->setContextProperty("uploadHandler",   uploadHandler);
                 engine.rootContext()->setContextProperty("fileListHandler", fileListHandler);

@@ -31,6 +31,7 @@ public:
 
     // ← NEW: load an existing 64‐byte Ed25519 secret (seed||pub).
     void loadPrivateKey(const uint8_t* rawSk, size_t len);
+    void loadPublicKey (const uint8_t* rawPk, size_t len);
 
     // ← NEW (optional): expose the raw 64‐byte libsodium sk if needed
     const unsigned char* getSecretKeyBuffer() const { return _sk; }

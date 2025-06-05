@@ -133,3 +133,20 @@ void Signer_Ed::loadPrivateKey(const uint8_t* rawSk, size_t len) {
     }
     this->_evpPkey = pkey;
 }
+
+void Signer_Ed::loadPublicKey(const uint8_t* rawPk, size_t len)
+{
+    if (len != crypto_sign_PUBLICKEYBYTES)
+        throw std::runtime_error("Signer_Ed::loadPublicKey expects 32-byte key");
+
+    /* 1) copy into the internal buffer */
+    std::memcpy(_pk, rawPk, len);
+
+    /* 2) rebuild the EVP handle (needed only if you use OpenSSL elsewhere) */
+    if (_evpPkey) EVP_PKEY_free(_evpPkey);
+    _evpPkey = EVP_PKEY_new_raw_public_key(
+        EVP_PKEY_ED25519, nullptr, _pk, crypto_sign_PUBLICKEYBYTES);
+
+    if (!_evpPkey)
+        throw std::runtime_error("Signer_Ed::loadPublicKey → EVP_PKEY_new_raw_public_key failed");
+}
