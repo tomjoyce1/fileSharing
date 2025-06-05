@@ -128,7 +128,6 @@ std::optional<json> FileListHandler::sendListRequest(
     QString& outError
     ) {
     AsioSslClient client;
-    client.init(Config::instance().caBundle);
 
     // Build and send the request
     HttpRequest req(

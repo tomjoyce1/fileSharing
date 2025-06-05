@@ -10,6 +10,10 @@
 #include <boost/asio/ssl/host_name_verification.hpp>
 #include "../../config.h"
 
+std::shared_ptr<boost::asio::ssl::context> AsioSslClient::s_ctx_{};
+std::vector<boost::asio::ip::tcp::endpoint> AsioSslClient::s_cached_eps_{};
+std::mutex AsioSslClient::s_eps_mtx_;
+
 /*────────────────────────   ctor / dtor   ────────────────────────*/
 
 AsioSslClient::AsioSslClient()
@@ -83,8 +87,19 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
     boost::system::error_code ec;
 
     /* 1 — DNS  */
-    auto eps = resolver_->resolve(host, std::to_string(port), ec);
-    if (ec) return makeError("DNS failed: " + ec.message());
+    std::vector<boost::asio::ip::tcp::endpoint> eps;
+    {
+        std::scoped_lock lk(s_eps_mtx_);
+        if (s_cached_eps_.empty()) {
+            auto results = resolver_->resolve(host, std::to_string(port), ec);
+            if (ec) return makeError("DNS failed: " + ec.message());
+
+                            s_cached_eps_.clear();
+                    for (const auto& entry : results)
+                               s_cached_eps_.push_back(entry.endpoint());
+            }
+        eps = s_cached_eps_;
+    }
 
     /* 2 — socket+TLS  */
     stream_.reset(new boost::asio::ssl::stream<
@@ -95,7 +110,11 @@ HttpResponse AsioSslClient::sendRequest(const HttpRequest& request,
 
     /* 3 — TCP connect  */
     boost::asio::connect(stream_->next_layer(), eps, ec);
-    if (ec) return makeError("connect: " + ec.message());
+    if (ec) {
+        std::scoped_lock lk(s_eps_mtx_);
+        s_cached_eps_.clear();
+        return makeError("connect: " + ec.message());
+    }
 
     /* 4 — TLS handshake (performs certificate + hostname check) */
     stream_->set_verify_callback(boost::asio::ssl::host_name_verification(host));    // ⭐ hostname ✔
