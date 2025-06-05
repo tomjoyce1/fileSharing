@@ -23,18 +23,7 @@
 #include <fstream>
 #include <sstream>
 
-/**
- * DownloadFileHandler
- *
- * Exposes downloadFile(int fileId) to QML.  For each fileId:
- *   1. Fetch encrypted blob + metadata from /api/fs/download (POST).
- *   2. Verify Ed25519 & Dilithium signatures over "<ownerUsername>|<fileHashHex>|<metaHashHex>".
- *   3. Decrypt metadata under local MEK + nonce → JSON {filename, filesize}.
- *   4. Decrypt file contents under local FEK + nonce → plaintext bytes.
- *   5. Write plaintext to ~/Desktop/<filename>.
- *
- * Emits downloadResult(title, message) back to QML.
- */
+
 class DownloadFileHandler : public QObject {
     Q_OBJECT
 
@@ -42,54 +31,84 @@ public:
     explicit DownloadFileHandler(ClientStore* store, QObject* parent = nullptr);
     ~DownloadFileHandler() override = default;
 
-    /** Called from QML: request a download of fileId */
+    /** Called from QML */
     Q_INVOKABLE void downloadFile(int fileId);
 
 signals:
-    /** Emits “Success” or “Error” back to QML */
+    /** Emits “Success” or “Error” after each download attempt */
     void downloadResult(const QString& title, const QString& message);
 
 private:
-    /** Orchestrates the entire process. Returns true if successful. */
     bool processSingleFile(int fileId);
 
-    /** Convert a byte vector → lowercase hex string */
-    static std::string bytesToHex(const std::vector<uint8_t>& data) {
-        static const char* lut = "0123456789abcdef";
-        std::string out;
-        out.reserve(data.size() * 2);
-        for (uint8_t b : data) {
-            out.push_back(lut[b >> 4]);
-            out.push_back(lut[b & 0x0F]);
-        }
-        return out;
-    }
-
-    /** Base64‐decode helper (calls into FileClientData) */
-    static std::vector<uint8_t> base64Decode(const std::string& s) {
-        return FileClientData::base64_decode(s);
-    }
-
-    /** Verify an Ed25519 signature (returns true if valid) */
-    bool verifyWithEd25519(const std::vector<uint8_t>& pubKeyRaw,
-                           const std::vector<uint8_t>& msg,
-                           const std::vector<uint8_t>& sig) const
-    {
-        Signer_Ed verifierEd;
-        verifierEd.loadPublicKey(pubKeyRaw.data(), pubKeyRaw.size());
-        return verifierEd.verify(msg, sig);
-    }
-
-    /** Verify a Dilithium signature (returns true if valid) */
-    bool verifyWithDilithium(const std::vector<uint8_t>& pubKeyRaw,
-                             const std::vector<uint8_t>& msg,
-                             const std::vector<uint8_t>& sig) const
-    {
-        Signer_Dilithium verifierPQ;
-        verifierPQ.loadPublicKey(pubKeyRaw.data(), pubKeyRaw.size());
-        return verifierPQ.verify(msg, sig);
-    }
-
-private:
     ClientStore* store;
+
+    // Helper to pull another user’s public bundle:
+    // POST /api/users/getBundle { username: "<ownerUsername>" }
+    // returns { key_bundle: { … } }
+    std::optional<KeyBundle> fetchPublicBundle(const std::string& ownerUsername) {
+        // Build JSON body
+        nlohmann::ordered_json jbody;
+        jbody["username"] = ownerUsername;
+        std::string bodyStr = jbody.dump();
+
+        // We assume store->getUser() is valid, so we have our logged‐in key bundle
+        auto maybeUser = store->getUser();
+        if (!maybeUser.has_value()) {
+            qWarning() << "[DownloadFileHandler] fetchPublicBundle: no logged‐in user";
+            return std::nullopt;
+        }
+        const auto& userInfo = *maybeUser;
+        const auto& myUsername = userInfo.username;
+        const auto& myKeyBundle = userInfo.fullBundle;
+
+        // Make dual‐signature headers
+        auto headers = NetworkAuthUtils::makeAuthHeaders(
+            myUsername,
+            myKeyBundle,
+            "POST",
+            "/api/users/getBundle",
+            bodyStr
+            );
+
+        HttpRequest req(
+            HttpRequest::Method::POST,
+            "/api/users/getBundle",
+            bodyStr,
+            headers
+            );
+        AsioHttpClient client;
+        client.init("");
+        HttpResponse resp = client.sendRequest(req);
+        if (resp.statusCode != 200) {
+            qWarning() << "[DownloadFileHandler] fetchPublicBundle: HTTP status =" << resp.statusCode;
+            return std::nullopt;
+        }
+
+        // Parse JSON
+        nlohmann::json respJson;
+        try {
+            respJson = nlohmann::json::parse(resp.body);
+        } catch (const std::exception& ex) {
+            qWarning() << "[DownloadFileHandler] fetchPublicBundle: JSON parse error:"
+                       << ex.what();
+            return std::nullopt;
+        }
+
+        if (!respJson.contains("key_bundle")) {
+            qWarning() << "[DownloadFileHandler] fetchPublicBundle: missing key_bundle";
+            return std::nullopt;
+        }
+
+        // key_bundle is already a JSON object with exactly { preQuantum:…, postQuantum:… }
+        nlohmann::json kbJson = respJson.at("key_bundle");
+        try {
+            KeyBundle kb = KeyBundle::fromJsonPrivate(kbJson.dump());
+            return kb;
+        } catch (const std::exception& ex) {
+            qWarning() << "[DownloadFileHandler] fetchPublicBundle: failed to parse KeyBundle:"
+                       << ex.what();
+            return std::nullopt;
+        }
+    }
 };

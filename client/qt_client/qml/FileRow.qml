@@ -40,6 +40,7 @@ Item {
     // ------------------------------------------------
     // These data properties come from FileTable.delegate
     // ------------------------------------------------
+    property int fileId: -1
     property alias fileName: nameLabel.text
     property alias fileSize: sizeLabel.text
 
@@ -47,10 +48,10 @@ Item {
         // These signals must exist so FileTable.qml can bind to them:
         //   onDownloadRequested, onShareRequested, onDeleteRequested, onRevokeRequested
         // ------------------------------------------------
-        signal downloadRequested()
-        signal shareRequested()
-        signal deleteRequested()
-        signal revokeRequested()
+        signal downloadRequested(int fileId)
+        signal shareRequested(int fileId, string shareToUser)
+        signal deleteRequested(int fileId)
+        signal revokeRequested(int fileId, string revokeFromUser)
 
         // ------------------------------------------------
         // Hover‐highlight background
@@ -119,7 +120,7 @@ Item {
                 text: qsTr("Download")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: downloadRequested()
+                onClicked: downloadRequested(root.fileId)
 
                 background: Rectangle {
                     anchors.fill: parent
@@ -142,7 +143,11 @@ Item {
                 text: qsTr("Share")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: shareDialog.open()
+                onClicked: {
+                           shareRequested(root.fileId, shareField.text)
+                           shareField.text = ""
+                           shareDialog.close()
+                       }
 
                 background: Rectangle {
                     anchors.fill: parent
@@ -164,7 +169,7 @@ Item {
                 text: qsTr("Delete")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: deleteRequested()
+                onClicked: deleteRequested(root.fileId)
 
                 background: Rectangle {
                     anchors.fill: parent
@@ -186,7 +191,11 @@ Item {
                 text: qsTr("Revoke")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: revokeDialog.open()
+                onClicked: {
+                            revokeRequested(root.fileId, revokeField.text)
+                            revokeField.text = ""
+                            revokeDialog.close()
+                }
 
                 background: Rectangle {
                     anchors.fill: parent

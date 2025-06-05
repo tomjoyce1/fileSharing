@@ -72,3 +72,14 @@ void Signer_Ed::loadPrivateKey(const uint8_t* rawSk, size_t len) {
             );
     }
 }
+
+void Signer_Ed::loadPublicKey(const uint8_t* rawPk, size_t len) {
+    if (len != crypto_sign_PUBLICKEYBYTES) {
+        throw std::runtime_error(
+            "Signer_Ed::loadPublicKey: expected exactly "
+            + std::to_string(crypto_sign_PUBLICKEYBYTES)
+            + " bytes, but got " + std::to_string(len) + " bytes."
+            );
+    }
+    std::memcpy(_pk, rawPk, crypto_sign_PUBLICKEYBYTES);
+}

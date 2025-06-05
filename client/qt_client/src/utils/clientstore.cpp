@@ -259,7 +259,7 @@ void ClientStore::from_json(const json& j) {
         uinfo.privEnc      = base64Decode( uj.at("priv_enc").get<std::string>() );
 
         // Load public bundle
-        uinfo.publicBundle = KeyBundle::fromJson( uj.at("public_keybundle").dump() );
+        uinfo.publicBundle = KeyBundle::fromJsonPublic( uj.at("public_keybundle").dump() );
 
         m_user = std::move(uinfo);
         CLS_LOG("from_json") << "loaded encrypted user: " << QString::fromStdString(m_user->username);
@@ -568,4 +568,10 @@ bool ClientStore::changePassword(const std::string& oldPassword,
     CLS_LOG("changePassword") << "persisting changes via save()";
     save();
     return true;
+}
+
+std::optional<KeyBundle> ClientStore::getPublicBundleForUsername(const std::string& username) const
+{
+    // TODO do this
+    throw;
 }

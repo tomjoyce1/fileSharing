@@ -33,6 +33,8 @@ public:
 
     // helpers -----------------------------------------------------------------
     void   loadPrivateKey(const uint8_t* sk, size_t len);  // import existing sk
+    void   loadPublicKey(const uint8_t* pk, size_t len);
+
     size_t skLength()      const { return _oqs->length_secret_key; }
     const uint8_t* getSecretKeyBuffer() const { return _sk.data(); }
 

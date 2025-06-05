@@ -61,3 +61,14 @@ void Signer_Dilithium::loadPrivateKey(const uint8_t* rawSk, size_t len) {
 
     _sk.assign(rawSk, rawSk + len);         // deep-copy into our vector
 }
+
+void Signer_Dilithium::loadPublicKey(const uint8_t* rawPk, size_t len) {
+    if (len != static_cast<size_t>(_oqs->length_public_key)) {
+        throw std::runtime_error(
+            "Signer_Dilithium::loadPublicKey: expected exactly "
+            + std::to_string(_oqs->length_public_key)
+            + " bytes, but got " + std::to_string(len) + " bytes."
+            );
+    }
+    _pk.assign(rawPk, rawPk + len);
+}

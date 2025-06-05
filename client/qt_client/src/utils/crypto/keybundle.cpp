@@ -1,37 +1,60 @@
+// KeyBundle.cpp
+
 #include "KeyBundle.h"
 #include <cstring>
-#include <sstream>
 #include <stdexcept>
-#include "Kem_Ecdh.h"
-#include "Signer_Ed.h"
-#include "Signer_Dilithium.h"
-#include "DerUtils.h"
-#include "QDebug"
+#include <nlohmann/json.hpp>
+#include <QDebug>               // For qDebug() and qWarning()
+#include "DerUtils.h"           // der::x25519, der::ed25519, parseX25519Spki, parseEd25519Spki
+#include "Kem_Ecdh.h"           // X25519 KEM keygen/pub/priv
+#include "Signer_Ed.h"          // Ed25519 keygen/pub/priv
+#include "Signer_Dilithium.h"   // Dilithium-5 keygen/pub/priv
+#include <sodium.h>
 
 static constexpr int BASE64_VARIANT = sodium_base64_VARIANT_ORIGINAL;
 
 //───────────────────────────────────────────────────────────────────────────────
-//  Base64 helpers (unchanged from before)
+//  Base64 helpers
 //───────────────────────────────────────────────────────────────────────────────
 std::string KeyBundle::toBase64(const std::vector<uint8_t>& data) {
-    if (data.empty()) return "";
-    size_t b64len = sodium_base64_encoded_len(data.size(), BASE64_VARIANT);
-    std::string output; output.resize(b64len);
+    if (data.empty()) {
+        qDebug() << "[KeyBundle::toBase64] Input data is empty → returning empty string.";
+        return "";
+    }
+    qDebug().nospace()
+        << "[KeyBundle::toBase64] Encoding " << data.size() << " raw bytes to Base64.";
+
+    size_t needed = sodium_base64_encoded_len(data.size(), BASE64_VARIANT);
+    std::string out;
+    out.resize(needed);
     sodium_bin2base64(
-        &output[0], b64len,
+        out.data(), needed,
         data.data(), data.size(),
         BASE64_VARIANT
         );
-    if (!output.empty() && output.back()=='\0') output.pop_back();
-    return output;
+    if (!out.empty() && out.back() == '\0') {
+        out.pop_back();
+    }
+    qDebug().nospace()
+        << "[KeyBundle::toBase64] Produced Base64 length=" << out.size();
+    return out;
 }
 
 std::vector<uint8_t> KeyBundle::fromBase64(
     const std::string& b64,
     const std::string& nameForError
     ) {
-    if (b64.empty()) return {};
-    size_t maxBinLen = (b64.size() * 3) / 4 + 1;
+    if (b64.empty()) {
+        qDebug().nospace()
+            << "[KeyBundle::fromBase64] Input Base64 for \"" << nameForError
+            << "\" is empty → returning empty vector.";
+        return {};
+    }
+    qDebug().nospace()
+        << "[KeyBundle::fromBase64] Decoding Base64 for \"" << nameForError
+        << "\", length=" << b64.size();
+
+    size_t maxBinLen = (b64.size() * 3) / 4 + 16;
     std::vector<uint8_t> bin(maxBinLen);
     size_t binLen = 0;
     int ret = sodium_base642bin(
@@ -45,313 +68,429 @@ std::vector<uint8_t> KeyBundle::fromBase64(
         BASE64_VARIANT
         );
     if (ret != 0) {
+        qWarning().nospace()
+            << "[KeyBundle::fromBase64] Failed to decode Base64 for \""
+            << nameForError << "\"";
         throw std::invalid_argument(
             "KeyBundle::fromBase64(" + nameForError + "): invalid Base64"
             );
     }
     bin.resize(binLen);
+    qDebug().nospace()
+        << "[KeyBundle::fromBase64] Decoded \"" << nameForError
+        << "\" into " << binLen << " raw bytes.";
     return bin;
 }
 
 //───────────────────────────────────────────────────────────────────────────────
-//  Default constructor: generate fresh keypairs (both pub AND priv)
+//  Default constructor: generate fresh keypairs (raw)
 //───────────────────────────────────────────────────────────────────────────────
 KeyBundle::KeyBundle() {
+    qDebug() << "[KeyBundle::KeyBundle] Entering default constructor.";
     if (sodium_init() < 0) {
+        qWarning() << "[KeyBundle::KeyBundle] sodium_init() failed!";
         throw std::runtime_error("KeyBundle::KeyBundle: sodium_init failed");
     }
 
     // 1) X25519 (KEM)
     {
-        Kem_Ecdh kemEcdh;
-        kemEcdh.keygen();              // internally populates both pub & priv
-        x25519Pub_  = kemEcdh.pub();
-        auto privK  = kemEcdh.getSecretKey();  // assume you add a `priv()` method to Kem_Ecdh
-        x25519Priv_ = privK;
+        qDebug() << "[KeyBundle::KeyBundle] Generating X25519 keypair...";
+        Kem_Ecdh kem;
+        kem.keygen();  // raw 32‐byte pub + raw 32‐byte priv
+        x25519PubRaw_  = kem.pub();           // raw 32 bytes
+        x25519PrivRaw_ = kem.getSecretKey();  // raw 32 bytes
+        if (x25519PubRaw_.size() != 32 || x25519PrivRaw_.size() != 32) {
+            qWarning() << "[KeyBundle::KeyBundle] X25519 key lengths incorrect:"
+                       << x25519PubRaw_.size() << "/" << x25519PrivRaw_.size();
+            throw std::runtime_error("X25519 keygen yielded wrong length");
+        }
+        qDebug().nospace()
+            << "[KeyBundle::KeyBundle] X25519 generated (public=32 bytes, private=32 bytes).";
     }
 
-    // 2) ED25519 (pre-quantum)
+    // 2) Ed25519 (pre-quantum signing)
     {
+        qDebug() << "[KeyBundle::KeyBundle] Generating Ed25519 keypair...";
         Signer_Ed signerEd;
-        signerEd.keygen();  // generates _sk_ (64 bytes) and _pk_ (32 bytes)
-        ed25519Pub_  = signerEd.pub();
-        ed25519Priv_.resize(crypto_sign_SECRETKEYBYTES);
+        signerEd.keygen(); // generates 64‐byte secret + 32‐byte public
+
+        ed25519PubRaw_.assign(signerEd.pub().begin(), signerEd.pub().end());
+        ed25519PrivRaw_.resize(crypto_sign_SECRETKEYBYTES);
         std::memcpy(
-            ed25519Priv_.data(),
-            signerEd.getSecretKeyBuffer(),    // <-- we'll add this
+            ed25519PrivRaw_.data(),
+            signerEd.getSecretKeyBuffer(),
             crypto_sign_SECRETKEYBYTES
             );
+        if (ed25519PubRaw_.size() != 32 || ed25519PrivRaw_.size() != 64) {
+            qWarning() << "[KeyBundle::KeyBundle] Ed25519 key lengths incorrect:"
+                       << ed25519PubRaw_.size() << "/" << ed25519PrivRaw_.size();
+            throw std::runtime_error("Ed25519 keygen yielded wrong length");
+        }
+        qDebug().nospace()
+            << "[KeyBundle::KeyBundle] Ed25519 generated (public=32 bytes, private=64 bytes).";
     }
 
-    // 3) Dilithium5 (post-quantum)
+    // 3) Dilithium-5 (post-quantum signing)
     {
+        qDebug() << "[KeyBundle::KeyBundle] Generating Dilithium-5 keypair (ML-DSA-87)...";
         Signer_Dilithium signerPQ;
-        signerPQ.keygen();  // generates _sk_ and _pk_
-        dilithiumPub_  = signerPQ.pub();
-        dilithiumPriv_.resize(signerPQ.skLength());
+        signerPQ.keygen();  // generates raw public + raw private
+
+        dilithiumPubRaw_   = signerPQ.pub();
+        dilithiumPrivRaw_.resize(signerPQ.skLength());
         std::memcpy(
-            dilithiumPriv_.data(),
-            signerPQ.getSecretKeyBuffer(),  // <-- we'll add this
+            dilithiumPrivRaw_.data(),
+            signerPQ.getSecretKeyBuffer(),
             signerPQ.skLength()
             );
+        if (dilithiumPubRaw_.empty() || dilithiumPrivRaw_.empty()) {
+            qWarning() << "[KeyBundle::KeyBundle] Dilithium-5 key lengths incorrect: "
+                       << "public=" << dilithiumPubRaw_.size()
+                       << ", private=" << dilithiumPrivRaw_.size();
+            throw std::runtime_error("Dilithium-5 keygen failed");
+        }
+        qDebug().nospace()
+            << "[KeyBundle::KeyBundle] Dilithium-5 generated (public="
+            << dilithiumPubRaw_.size() << " bytes, private="
+            << dilithiumPrivRaw_.size() << " bytes).";
     }
-}
 
-// Public only constructor
-KeyBundle::KeyBundle(
-    const std::vector<uint8_t>& x25519Public,
-    const std::vector<uint8_t>& ed25519Public,
-    const std::vector<uint8_t>& dilithiumPublic
-    )
-    : x25519Pub_(x25519Public)
-    , ed25519Pub_(ed25519Public)
-    , dilithiumPub_(dilithiumPublic)
-{
-    if (x25519Pub_.empty() || ed25519Pub_.empty() || dilithiumPub_.empty()) {
-        throw std::invalid_argument(
-            "KeyBundle::KeyBundle(public-only): all public fields must be non-empty"
-            );
-    }
-    // We deliberately leave x25519Priv_, ed25519Priv_, dilithiumPriv_ empty
-    // because this constructor is strictly “public only.”
+    qDebug() << "[KeyBundle::KeyBundle] Default constructor complete.";
 }
 
 //───────────────────────────────────────────────────────────────────────────────
-//  Parameterized constructor from raw binary + private for “importing”
+//  Public-only constructor (raw public keys)
 //───────────────────────────────────────────────────────────────────────────────
 KeyBundle::KeyBundle(
-    const std::vector<uint8_t>& x25519Public,
-    const std::vector<uint8_t>& ed25519Public,
-    const std::vector<uint8_t>& dilithiumPublic,
-    const std::vector<uint8_t>& x25519Private,
-    const std::vector<uint8_t>& ed25519Private,
-    const std::vector<uint8_t>& dilithiumPrivate
-    )
-    : x25519Pub_(x25519Public)
-    , ed25519Pub_(ed25519Public)
-    , dilithiumPub_(dilithiumPublic)
-    , x25519Priv_(x25519Private)
-    , ed25519Priv_(ed25519Private)
-    , dilithiumPriv_(dilithiumPrivate)
+    const std::vector<uint8_t>& x25519PublicRaw,
+    const std::vector<uint8_t>& ed25519PublicRaw,
+    const std::vector<uint8_t>& dilithiumPublicRaw
+    )   : x25519PubRaw_(x25519PublicRaw),
+    ed25519PubRaw_(ed25519PublicRaw),
+    dilithiumPubRaw_(dilithiumPublicRaw)
 {
-    if (x25519Pub_.empty() || ed25519Pub_.empty() || dilithiumPub_.empty() ||
-        x25519Priv_.empty()|| ed25519Priv_.empty()|| dilithiumPriv_.empty())
+    qDebug().nospace()
+        << "[KeyBundle::KeyBundle(public)] Entering public-only ctor for public sizes: "
+        << "X25519=" << x25519PubRaw_.size() << ", "
+        << "Ed25519=" << ed25519PubRaw_.size() << ", "
+        << "Dilithium=" << dilithiumPubRaw_.size();
+
+    if (x25519PubRaw_.size() != 32 ||
+        ed25519PubRaw_.size() != 32 ||
+        dilithiumPubRaw_.empty())
     {
-        throw std::invalid_argument("KeyBundle::KeyBundle: all fields must be non‐empty");
+        qWarning().nospace()
+            << "[KeyBundle::KeyBundle(public)] Invalid public key lengths: "
+            << "X25519=" << x25519PubRaw_.size() << ", "
+            << "Ed25519=" << ed25519PubRaw_.size() << ", "
+            << "Dilithium=" << dilithiumPubRaw_.size();
+        throw std::invalid_argument("KeyBundle(public): invalid public key lengths");
     }
+    x25519PrivRaw_.clear();
+    ed25519PrivRaw_.clear();
+    dilithiumPrivRaw_.clear();
+
+    qDebug() << "[KeyBundle::KeyBundle(public)] Public-only ctor complete.";
+}
+
+//───────────────────────────────────────────────────────────────────────────────
+//  Full constructor (raw public + raw private)
+//───────────────────────────────────────────────────────────────────────────────
+KeyBundle::KeyBundle(
+    const std::vector<uint8_t>& x25519PublicRaw,
+    const std::vector<uint8_t>& ed25519PublicRaw,
+    const std::vector<uint8_t>& dilithiumPublicRaw,
+    const std::vector<uint8_t>& x25519PrivateRaw,
+    const std::vector<uint8_t>& ed25519PrivateRaw,
+    const std::vector<uint8_t>& dilithiumPrivateRaw
+    )   : x25519PubRaw_(x25519PublicRaw),
+    ed25519PubRaw_(ed25519PublicRaw),
+    dilithiumPubRaw_(dilithiumPublicRaw),
+    x25519PrivRaw_(x25519PrivateRaw),
+    ed25519PrivRaw_(ed25519PrivateRaw),
+    dilithiumPrivRaw_(dilithiumPrivateRaw)
+{
+    qDebug().nospace()
+        << "[KeyBundle::KeyBundle(full)] Entering full ctor. Public sizes: "
+        << "X25519=" << x25519PubRaw_.size() << ", "
+        << "Ed25519=" << ed25519PubRaw_.size() << ", "
+        << "Dilithium=" << dilithiumPubRaw_.size() << "; Private sizes: "
+        << "X25519=" << x25519PrivRaw_.size() << ", "
+        << "Ed25519=" << ed25519PrivRaw_.size() << ", "
+        << "Dilithium=" << dilithiumPrivRaw_.size();
+
+    if (x25519PubRaw_.size() != 32 ||
+        ed25519PubRaw_.size() != 32 ||
+        dilithiumPubRaw_.empty() ||
+        x25519PrivRaw_.size() != 32 ||
+        ed25519PrivRaw_.size() != crypto_sign_SECRETKEYBYTES ||
+        dilithiumPrivRaw_.empty())
+    {
+        qWarning() << "[KeyBundle::KeyBundle(full)] One or more key lengths invalid:";
+        qWarning().nospace() << "  x25519PubRaw=" << x25519PubRaw_.size()
+                             << ", ed25519PubRaw=" << ed25519PubRaw_.size()
+                             << ", dilithiumPubRaw=" << dilithiumPubRaw_.size();
+        qWarning().nospace() << "  x25519PrivRaw=" << x25519PrivRaw_.size()
+                             << ", ed25519PrivRaw=" << ed25519PrivRaw_.size()
+                             << ", dilithiumPrivRaw=" << dilithiumPrivRaw_.size();
+
+        throw std::invalid_argument("KeyBundle(full): invalid key lengths");
+    }
+
+    qDebug() << "[KeyBundle::KeyBundle(full)] Full ctor complete.";
 }
 
 KeyBundle::KeyBundle(const KeyBundle& other)
-    : x25519Pub_(other.x25519Pub_)
-    , ed25519Pub_(other.ed25519Pub_)
-    , dilithiumPub_(other.dilithiumPub_)
-    , x25519Priv_(other.x25519Priv_)
-    , ed25519Priv_(other.ed25519Priv_)
-    , dilithiumPriv_(other.dilithiumPriv_)
-{}
+    : x25519PubRaw_(other.x25519PubRaw_),
+    ed25519PubRaw_(other.ed25519PubRaw_),
+    dilithiumPubRaw_(other.dilithiumPubRaw_),
+    x25519PrivRaw_(other.x25519PrivRaw_),
+    ed25519PrivRaw_(other.ed25519PrivRaw_),
+    dilithiumPrivRaw_(other.dilithiumPrivRaw_)
+{
+    qDebug() << "[KeyBundle::KeyBundle(copy)] Copy constructor invoked.";
+}
 
 KeyBundle& KeyBundle::operator=(const KeyBundle& other) {
     if (this != &other) {
-        x25519Pub_    = other.x25519Pub_;
-        ed25519Pub_   = other.ed25519Pub_;
-        dilithiumPub_ = other.dilithiumPub_;
-        x25519Priv_   = other.x25519Priv_;
-        ed25519Priv_  = other.ed25519Priv_;
-        dilithiumPriv_= other.dilithiumPriv_;
+        qDebug() << "[KeyBundle::operator=] Copy assignment invoked.";
+        x25519PubRaw_     = other.x25519PubRaw_;
+        ed25519PubRaw_    = other.ed25519PubRaw_;
+        dilithiumPubRaw_  = other.dilithiumPubRaw_;
+        x25519PrivRaw_    = other.x25519PrivRaw_;
+        ed25519PrivRaw_   = other.ed25519PrivRaw_;
+        dilithiumPrivRaw_ = other.dilithiumPrivRaw_;
     }
     return *this;
 }
 
 KeyBundle::KeyBundle(KeyBundle&& other) noexcept
-    : x25519Pub_(std::move(other.x25519Pub_))
-    , ed25519Pub_(std::move(other.ed25519Pub_))
-    , dilithiumPub_(std::move(other.dilithiumPub_))
-    , x25519Priv_(std::move(other.x25519Priv_))
-    , ed25519Priv_(std::move(other.ed25519Priv_))
-    , dilithiumPriv_(std::move(other.dilithiumPriv_))
-{}
+    : x25519PubRaw_(std::move(other.x25519PubRaw_)),
+    ed25519PubRaw_(std::move(other.ed25519PubRaw_)),
+    dilithiumPubRaw_(std::move(other.dilithiumPubRaw_)),
+    x25519PrivRaw_(std::move(other.x25519PrivRaw_)),
+    ed25519PrivRaw_(std::move(other.ed25519PrivRaw_)),
+    dilithiumPrivRaw_(std::move(other.dilithiumPrivRaw_))
+{
+    qDebug() << "[KeyBundle::KeyBundle(move)] Move constructor invoked.";
+}
 
 KeyBundle& KeyBundle::operator=(KeyBundle&& other) noexcept {
     if (this != &other) {
-        x25519Pub_    = std::move(other.x25519Pub_);
-        ed25519Pub_   = std::move(other.ed25519Pub_);
-        dilithiumPub_ = std::move(other.dilithiumPub_);
-        x25519Priv_   = std::move(other.x25519Priv_);
-        ed25519Priv_  = std::move(other.ed25519Priv_);
-        dilithiumPriv_= std::move(other.dilithiumPriv_);
+        qDebug() << "[KeyBundle::operator=(move)] Move assignment invoked.";
+        x25519PubRaw_     = std::move(other.x25519PubRaw_);
+        ed25519PubRaw_    = std::move(other.ed25519PubRaw_);
+        dilithiumPubRaw_  = std::move(other.dilithiumPubRaw_);
+        x25519PrivRaw_    = std::move(other.x25519PrivRaw_);
+        ed25519PrivRaw_   = std::move(other.ed25519PrivRaw_);
+        dilithiumPrivRaw_ = std::move(other.dilithiumPrivRaw_);
     }
     return *this;
 }
 
 //───────────────────────────────────────────────────────────────────────────────
-//  toJson() ≔ only public keys, exactly what the server’s “register” expects
+//  toJsonPublic(): raw → SPKI-DER → Base64 → JSON
 //───────────────────────────────────────────────────────────────────────────────
-std::string KeyBundle::toJson() const {
-    qDebug().nospace()
-        << "[KeyBundle::toJson] x25519Pub_.size()=" << x25519Pub_.size()
-        << ", ed25519Pub_.size()="   << ed25519Pub_.size()
-        << ", dilithiumPub_.size()=" << dilithiumPub_.size();
-
-    // If these vectors already contain SPKI-DER bytes, just encode them directly:
-    const std::string kemB64 = toBase64(x25519Pub_);   // already DER(44 bytes)
-    const std::string edB64  = toBase64(ed25519Pub_);  // already DER(~2592 bytes)
-    const std::string dilB64 = toBase64(dilithiumPub_);
-
-    qDebug().nospace() << "serializing JSON with DER blobs…";
-
-    std::ostringstream oss;
-    oss << R"({"preQuantum":{"identityKemPublicKey":")" << kemB64
-        << R"(","identitySigningPublicKey":")"             << edB64
-        << R"("},"postQuantum":{"identitySigningPublicKey":")" << dilB64
-        << R"("}})";
-    return oss.str();
-}
-
-
 nlohmann::json KeyBundle::toJsonPublic() const {
-    return nlohmann::json::parse(toJson());
+    qDebug() << "[KeyBundle::toJsonPublic] Entering. Raw public sizes:"
+             << "X25519=" << x25519PubRaw_.size()
+             << ", Ed25519=" << ed25519PubRaw_.size()
+             << ", Dilithium=" << dilithiumPubRaw_.size();
+
+    // 1) Wrap raw → DER (44 bytes) for X25519 and Ed25519
+    std::vector<uint8_t> xDer = der::x25519(x25519PubRaw_);
+    std::vector<uint8_t> eDer = der::ed25519(ed25519PubRaw_);
+    qDebug().nospace()
+        << "[KeyBundle::toJsonPublic] Wrapped X25519 to DER length=" << xDer.size()
+        << ", Ed25519 to DER length=" << eDer.size();
+    if (xDer.size() != 44 || eDer.size() != 44) {
+        qWarning() << "[KeyBundle::toJsonPublic] DER wrap lengths unexpected!";
+        throw std::runtime_error("KeyBundle::toJsonPublic: DER wrap error");
+    }
+
+    // 2) Base64-encode those DER blobs
+    std::string kemB64 = toBase64(xDer);
+    std::string edB64  = toBase64(eDer);
+    qDebug().nospace()
+        << "[KeyBundle::toJsonPublic] Base64 lengths: X25519=" << kemB64.size()
+        << ", Ed25519=" << edB64.size();
+
+    // 3) PQ side: raw → Base64 (no DER step)
+    std::string dilB64 = toBase64(dilithiumPubRaw_);
+    qDebug().nospace()
+        << "[KeyBundle::toJsonPublic] Base64 length of Dilithium pub=" << dilB64.size();
+
+    // 4) Build JSON
+    nlohmann::json j;
+    j["preQuantum"]["identityKemPublicKey"]     = kemB64;
+    j["preQuantum"]["identitySigningPublicKey"] = edB64;
+    j["postQuantum"]["identitySigningPublicKey"] = dilB64;
+
+    qDebug() << "[KeyBundle::toJsonPublic] Returning JSON object.";
+    return j;
 }
 
 //───────────────────────────────────────────────────────────────────────────────
-//  toJsonPrivate() ≔ public keys + private keys (all base64), so we can store on disk
+//  fromJsonPublic(): JSON → Base64 → DER → raw
+//───────────────────────────────────────────────────────────────────────────────
+KeyBundle KeyBundle::fromJsonPublic(const std::string& jsonStr) {
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPublic] Parsing JSON (length=" << jsonStr.size() << ")";
+    nlohmann::json j = nlohmann::json::parse(jsonStr);
+
+    // Extract Base64 strings
+    std::string kemB64, edB64, dilB64;
+    try {
+        kemB64 = j.at("preQuantum").at("identityKemPublicKey").get<std::string>();
+        edB64  = j.at("preQuantum").at("identitySigningPublicKey").get<std::string>();
+        dilB64 = j.at("postQuantum").at("identitySigningPublicKey").get<std::string>();
+    } catch (...) {
+        qWarning() << "[KeyBundle::fromJsonPublic] Missing expected JSON fields!";
+        throw std::invalid_argument("KeyBundle::fromJsonPublic: missing fields");
+    }
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPublic] Extracted Base64 lengths: X25519="
+        << kemB64.size() << ", Ed25519=" << edB64.size()
+        << ", Dilithium=" << dilB64.size();
+
+    // Base64 → DER (44 bytes) → raw (32 bytes) for X25519/Ed25519
+    std::vector<uint8_t> xDer  = fromBase64(kemB64, "x25519Pub");
+    std::vector<uint8_t> eDer  = fromBase64(edB64,  "ed25519Pub");
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPublic] Decoded DER lengths: X25519="
+        << xDer.size() << ", Ed25519=" << eDer.size();
+    if (xDer.size() != 44 || eDer.size() != 44) {
+        qWarning() << "[KeyBundle::fromJsonPublic] Unexpected DER lengths!";
+        throw std::invalid_argument("KeyBundle::fromJsonPublic: DER length mismatch");
+    }
+    std::vector<uint8_t> xRaw = der::parseX25519Spki(xDer);
+    std::vector<uint8_t> eRaw = der::parseEd25519Spki(eDer);
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPublic] Parsed raw lengths: X25519=" << xRaw.size()
+        << ", Ed25519=" << eRaw.size();
+
+    // Base64 → raw PQ for Dilithium-5
+    std::vector<uint8_t> dilRaw = fromBase64(dilB64, "dilithiumPub");
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPublic] Parsed raw PQ length=" << dilRaw.size();
+
+    qDebug() << "[KeyBundle::fromJsonPublic] Constructing public-only KeyBundle.";
+    return KeyBundle(xRaw, eRaw, dilRaw);
+}
+
+//───────────────────────────────────────────────────────────────────────────────
+//  toJsonPrivate(): public (DER+Base64) + private (raw+Base64)
 //───────────────────────────────────────────────────────────────────────────────
 nlohmann::json KeyBundle::toJsonPrivate() const {
+    qDebug() << "[KeyBundle::toJsonPrivate] Entering, will include private keys too.";
+
+    // Start from public JSON
     nlohmann::json jpub = toJsonPublic();
+    qDebug() << "[KeyBundle::toJsonPrivate] Obtained public JSON portion.";
 
-    // … existing comments …
-
-    // Copy public‐side JSON:
+    // Copy into jpriv, then insert raw-→Base64 private keys
     nlohmann::json jpriv = jpub;
-
-    // Insert private‐key fields (all base64‐encoded):
-    jpriv["preQuantum"]["identityKemPrivateKey"]     = toBase64(x25519Priv_);
-    jpriv["preQuantum"]["identitySigningPrivateKey"] = toBase64(ed25519Priv_);
-    jpriv["postQuantum"]["identitySigningPrivateKey"] = toBase64(dilithiumPriv_);
-
-    // ─── INSERT THIS DEBUG BLOCK ──────────────────────────────────────────────
-    {
-        // Base64 strings:
-        const std::string kemPrivB64        = jpriv["preQuantum"]["identityKemPrivateKey"].get<std::string>();
-        const std::string edPrivB64         = jpriv["preQuantum"]["identitySigningPrivateKey"].get<std::string>();
-        const std::string dilithiumPrivB64  = jpriv["postQuantum"]["identitySigningPrivateKey"].get<std::string>();
-
-        // Decode each back to raw bytes so we know their true size:
-        std::vector<uint8_t> kemPrivRaw       = fromBase64(kemPrivB64,        "x25519Priv");
-        std::vector<uint8_t> edPrivRaw        = fromBase64(edPrivB64,         "ed25519Priv");
-        std::vector<uint8_t> dilithiumPrivRaw = fromBase64(dilithiumPrivB64,  "dilithiumPriv");
-
-        qDebug().nospace() << "[KeyBundle::toJsonPrivate] "
-                           << "kemPrivB64.length="   << kemPrivB64.length()
-                           << ", kemPrivRaw.size="   << kemPrivRaw.size()
-                           << " | edPrivB64.length=" << edPrivB64.length()
-                           << ", edPrivRaw.size="    << edPrivRaw.size()
-                           << " | dilithiumPrivB64.length="  << dilithiumPrivB64.length()
-                           << ", dilithiumPrivRaw.size="    << dilithiumPrivRaw.size();
-        // Expect:
-        //   kemPrivRaw.size()       == 32
-        //   edPrivRaw.size()        == crypto_sign_SECRETKEYBYTES (64)
-        //   dilithiumPrivRaw.size() == (OQS_SIG_dilithium_5_length, e.g. ~4896)
-    }
-    // ────────────────────────────────────────────────────────────────────────
+    jpriv["preQuantum"]["identityKemPrivateKey"]     = toBase64(x25519PrivRaw_);
+    jpriv["preQuantum"]["identitySigningPrivateKey"] = toBase64(ed25519PrivRaw_);
+    jpriv["postQuantum"]["identitySigningPrivateKey"] = toBase64(dilithiumPrivRaw_);
+    qDebug().nospace()
+        << "[KeyBundle::toJsonPrivate] Appended Base64-encoded private keys: "
+        << "X25519Priv=" << x25519PrivRaw_.size() << " bytes raw → Base64 len="
+        << toBase64(x25519PrivRaw_).size();
 
     return jpriv;
 }
 
 //───────────────────────────────────────────────────────────────────────────────
-//  fromJson(...)  ← parse only public keys (e.g. after you `toJson()`)
-//───────────────────────────────────────────────────────────────────────────────
-KeyBundle KeyBundle::fromJson(const std::string& jsonStr) {
-    // Exactly reverse what toJson() did (pull only pub fields).
-    // This is nearly identical to your old version.
-    auto extractField = [&](const std::string& keyName) -> std::string {
-        std::string pattern = "\"" + keyName + "\"";
-        size_t pos = jsonStr.find(pattern);
-        if (pos == std::string::npos) {
-            throw std::invalid_argument("KeyBundle::fromJson: missing field \"" + keyName + "\"");
-        }
-        pos = jsonStr.find(':', pos + pattern.size());
-        if (pos == std::string::npos) {
-            throw std::invalid_argument("KeyBundle::fromJson: malformed JSON near \"" + keyName + "\"");
-        }
-        pos++;
-        while (pos < jsonStr.size() && std::isspace((unsigned char)jsonStr[pos])) {
-            pos++;
-        }
-        if (pos >= jsonStr.size() || jsonStr[pos]!='"') {
-            throw std::invalid_argument("KeyBundle::fromJson: expected '\"' after field \"" + keyName + "\"");
-        }
-        pos++;
-        size_t start = pos;
-        while (pos < jsonStr.size() && jsonStr[pos]!='"') {
-            pos++;
-        }
-        if (pos>=jsonStr.size()) {
-            throw std::invalid_argument("KeyBundle::fromJson: unterminated string for \"" + keyName + "\"");
-        }
-        return jsonStr.substr(start, pos - start);
-    };
-
-    std::string x25519_b64    = extractField("identityKemPublicKey");
-    std::string ed25519_b64   = extractField("identitySigningPublicKey");
-    std::string dilithium_b64 = extractField("identitySigningPublicKey");
-    // (Note: In the JSON, the two identitySigningPublicKey fields appear under different parents,
-    //  but this helper will need to be more robust if the field names repeat. For now, assume
-    //  the `extractField` usage is distinct.)
-
-    std::vector<uint8_t> x25519Bytes  = fromBase64(x25519_b64, "x25519");
-    std::vector<uint8_t> ed25519Bytes = fromBase64(ed25519_b64, "ed25519");
-    std::vector<uint8_t> dilithiumBytes = fromBase64(dilithium_b64, "dilithium");
-
-    // We do not know the private keys here, so we pass empty vectors:
-    return KeyBundle(x25519Bytes, ed25519Bytes, dilithiumBytes);
-}
-
-
-
-
-//───────────────────────────────────────────────────────────────────────────────
-//  fromJsonPrivate(...) ← parse public+private keys from the JSON we wrote in toJsonPrivate()
+//  fromJsonPrivate(): parse public+private keys from JSON
 //───────────────────────────────────────────────────────────────────────────────
 KeyBundle KeyBundle::fromJsonPrivate(const nlohmann::json& j) {
-    // Now the JSON looks like:
-    // {
-    //   "preQuantum": {
-    //     "identityKemPublicKey":    "<base64>",
-    //     "identitySigningPublicKey":"<base64>",
-    //     "identityKemPrivateKey":   "<base64>",
-    //     "identitySigningPrivateKey":"<base64>"
-    //   },
-    //   "postQuantum": {
-    //     "identitySigningPublicKey":"<base64>",
-    //     "identitySigningPrivateKey":"<base64>"
-    //   }
-    // }
+    qDebug() << "[KeyBundle::fromJsonPrivate] Entering, JSON includes private fields.";
 
-    // Extract each base64 string:
-    auto preQ = j.at("preQuantum");
-    auto postQ = j.at("postQuantum");
+    // Extract Base64 strings
+    std::string kemPubB64, edPubB64, kemPrivB64, edPrivB64, dilPubB64, dilPrivB64;
+    try {
+        auto preQ  = j.at("preQuantum");
+        auto postQ = j.at("postQuantum");
 
-    std::string kemPubB64           = preQ.at("identityKemPublicKey").get<std::string>();
-    std::string signPubB64          = preQ.at("identitySigningPublicKey").get<std::string>();
-    std::string kemPrivB64          = preQ.at("identityKemPrivateKey").get<std::string>();
-    std::string signPrivB64         = preQ.at("identitySigningPrivateKey").get<std::string>();
-    std::string dilithiumPubB64     = postQ.at("identitySigningPublicKey").get<std::string>();
-    std::string dilithiumPrivB64    = postQ.at("identitySigningPrivateKey").get<std::string>();
+        kemPubB64    = preQ.at("identityKemPublicKey").get<std::string>();
+        edPubB64     = preQ.at("identitySigningPublicKey").get<std::string>();
+        kemPrivB64   = preQ.at("identityKemPrivateKey").get<std::string>();
+        edPrivB64    = preQ.at("identitySigningPrivateKey").get<std::string>();
 
-    // Base64 → raw bytes:
-    std::vector<uint8_t> kemPubBytes       = fromBase64(kemPubB64,        "kemPub");
-    std::vector<uint8_t> signPubBytes      = fromBase64(signPubB64,       "ed25519Pub");
-    std::vector<uint8_t> kemPrivBytes      = fromBase64(kemPrivB64,       "kemPriv");
-    std::vector<uint8_t> signPrivBytes     = fromBase64(signPrivB64,      "ed25519Priv");
-    std::vector<uint8_t> dilithiumPubBytes = fromBase64(dilithiumPubB64,   "dilPub");
-    std::vector<uint8_t> dilithiumPrivBytes= fromBase64(dilithiumPrivB64,  "dilPriv");
+        dilPubB64    = postQ.at("identitySigningPublicKey").get<std::string>();
+        dilPrivB64   = postQ.at("identitySigningPrivateKey").get<std::string>();
+    } catch (...) {
+        qWarning() << "[KeyBundle::fromJsonPrivate] Missing expected JSON fields!";
+        throw std::invalid_argument("KeyBundle::fromJsonPrivate: missing fields");
+    }
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPrivate] Extracted Base64 for: "
+        << "X25519Pub=" << kemPubB64.size()
+        << ", Ed25519Pub=" << edPubB64.size()
+        << ", X25519Priv=" << kemPrivB64.size()
+        << ", Ed25519Priv=" << edPrivB64.size()
+        << ", DilPub=" << dilPubB64.size()
+        << ", DilPriv=" << dilPrivB64.size();
 
+    // Public side: Base64 → DER (44) → raw (32)
+    std::vector<uint8_t> xDerRaw  = fromBase64(kemPubB64,   "x25519Pub");
+    std::vector<uint8_t> eDerRaw  = fromBase64(edPubB64,    "ed25519Pub");
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPrivate] Decoded DER lengths for public: "
+        << "X25519=" << xDerRaw.size() << ", Ed25519=" << eDerRaw.size();
+    if (xDerRaw.size() != 44 || eDerRaw.size() != 44) {
+        qWarning() << "[KeyBundle::fromJsonPrivate] Unexpected DER lengths for public keys!";
+        throw std::invalid_argument("KeyBundle::fromJsonPrivate: DER length mismatch");
+    }
+    std::vector<uint8_t> xPubRaw  = der::parseX25519Spki(xDerRaw);
+    std::vector<uint8_t> ePubRaw  = der::parseEd25519Spki(eDerRaw);
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPrivate] Parsed raw public lengths: "
+        << "X25519=" << xPubRaw.size() << ", Ed25519=" << ePubRaw.size();
+
+    // PQ public: Base64 → raw
+    std::vector<uint8_t> dPubRaw  = fromBase64(dilPubB64, "dilithiumPub");
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPrivate] Parsed raw Dilithium public length="
+        << dPubRaw.size();
+
+    // Private side: Base64 → raw
+    std::vector<uint8_t> xPrivRaw = fromBase64(kemPrivB64, "x25519Priv");
+    std::vector<uint8_t> ePrivRaw = fromBase64(edPrivB64,  "ed25519Priv");
+    std::vector<uint8_t> dPrivRaw = fromBase64(dilPrivB64, "dilithiumPriv");
+    qDebug().nospace()
+        << "[KeyBundle::fromJsonPrivate] Parsed raw private lengths: "
+        << "X25519Priv=" << xPrivRaw.size() << ", Ed25519Priv=" << ePrivRaw.size()
+        << ", DilPriv=" << dPrivRaw.size();
+
+    qDebug() << "[KeyBundle::fromJsonPrivate] Constructing full KeyBundle.";
     return KeyBundle(
-        kemPubBytes,       // x25519Public
-        signPubBytes,      // ed25519Public
-        dilithiumPubBytes, // dilithiumPublic
-        kemPrivBytes,      // x25519Private
-        signPrivBytes,     // ed25519Private
-        dilithiumPrivBytes // dilithiumPrivate
+        xPubRaw, ePubRaw, dPubRaw,
+        xPrivRaw, ePrivRaw, dPrivRaw
         );
+}
+
+//───────────────────────────────────────────────────────────────────────────────
+//  get*PrivateKeyBase64()
+//───────────────────────────────────────────────────────────────────────────────
+std::string KeyBundle::getX25519PrivateKeyBase64() const {
+    qDebug().nospace()
+        << "[KeyBundle::getX25519PrivateKeyBase64] Raw private length="
+        << x25519PrivRaw_.size();
+    return toBase64(x25519PrivRaw_);
+}
+
+std::string KeyBundle::getEd25519PrivateKeyBase64() const {
+    qDebug().nospace()
+        << "[KeyBundle::getEd25519PrivateKeyBase64] Raw private length="
+        << ed25519PrivRaw_.size();
+    return toBase64(ed25519PrivRaw_);
+}
+
+std::string KeyBundle::getDilithiumPrivateKeyBase64() const {
+    qDebug().nospace()
+        << "[KeyBundle::getDilithiumPrivateKeyBase64] Raw private length="
+        << dilithiumPrivRaw_.size();
+    return toBase64(dilithiumPrivRaw_);
 }

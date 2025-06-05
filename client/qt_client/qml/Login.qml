@@ -47,7 +47,7 @@ Item {
 
         Connections {
             target: loginHandler
-            onLoginResult: {
+            onLoginResult: function(title, message) {
                 if (title === "Success") {
                     appWin.loggedIn = true
                 } else {
@@ -56,6 +56,7 @@ Item {
                 }
             }
         }
+
 
         // link to register
         Label {

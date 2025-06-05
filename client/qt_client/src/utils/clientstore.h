@@ -177,6 +177,8 @@ public:
      */
     void removeFileData(uint64_t file_id);
 
+    std::optional<KeyBundle> getPublicBundleForUsername(const std::string& username) const;
+
 private:
     // Full path to the JSON file, e.g. "/home/alice/.ssshare/client_store.json"
     std::string             m_path;

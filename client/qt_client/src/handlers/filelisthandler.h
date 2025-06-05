@@ -1,3 +1,5 @@
+// FileListHandler.h
+
 #pragma once
 
 #include <QObject>
@@ -6,12 +8,13 @@
 #include <QVariant>
 #include <vector>
 #include <optional>
+#include <map>
 #include <nlohmann/json.hpp>
 
-#include "../utils/ClientStore.h"       // Your class that stores UserInfo + FileClientData
-#include "../utils/crypto/KeyBundle.h"  // Holds Ed25519, Dilithium, X25519 keys (public & private)
-#include "../utils/crypto/Symmetric.h"  // AES-256-CTR decrypt
-#include "../utils/crypto/FileClientData.h" // Contains FEK/MEK/nonces + to/from JSON + base64 helpers
+#include "../utils/ClientStore.h"
+#include "../utils/crypto/KeyBundle.h"
+#include "../utils/crypto/Symmetric.h"
+#include "../utils/crypto/FileClientData.h"
 
 /**
  * A simplified struct representing one file’s decrypted metadata.
@@ -49,14 +52,38 @@ signals:
     void errorOccurred(const QString& message);
 
 private:
-    // Core worker: does the signed POST → JSON parse → decrypt loop
+    // 1) Entry point for any of the three public listing methods
     void fetchPage(int page, bool onlyOwned, bool onlyShared);
 
-    // Given one element of the server’s fileData[], decrypt its metadata & fill a DecryptedFile.
-    std::optional<DecryptedFile> parseAndDecryptSingle(const nlohmann::json& singleFileJson);
+    // 2) Build the JSON body: { "page": <page> }
+    std::string buildPostBody(int page) const;
 
-    // If a file is shared (is_owner==false), unwrap FEK & MEK via X25519 ECDH + AES-CTR.
-    // Returns: pair<rawFEK, rawMEK> (each a 32-byte vector).
+
+    // 4) Send the HTTP request and return parsed JSON or an error string
+    std::optional<nlohmann::json> sendListRequest(
+        const std::string& bodyStr,
+        const std::map<std::string, std::string>& headers,
+        QString& outError
+        );
+
+    // 5) Given the “fileData” array, filter (owned/shared) & decrypt all entries to QVariantList
+    QVariantList processFileArray(
+        const nlohmann::json& fileArray,
+        bool onlyOwned,
+        bool onlyShared
+        );
+
+    // 6) For each individual JSON entry: decrypt metadata & build a QVariantMap
+    std::optional<QVariantMap> decryptSingleToVariant(
+        const nlohmann::json& singleFileJson
+        );
+
+    // (Existing helper: parse JSON → DecryptedFile, using unwrapKeysFromJson internally)
+    std::optional<DecryptedFile> parseAndDecryptSingle(
+        const nlohmann::json& singleFileJson
+        );
+
+    // (Existing helper: if file is shared, unwrap FEK/MEK via X25519 + AES-CTR)
     std::pair<std::vector<uint8_t>, std::vector<uint8_t>>
     unwrapKeysFromJson(const nlohmann::json& singleFileJson, const KeyBundle& privBundle);
 
