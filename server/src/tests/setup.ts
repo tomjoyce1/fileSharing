@@ -127,20 +127,7 @@ class TestFileHelper {
         Buffer.from(dataToSign)
       )
     ).toString("base64");
-
-    console.log("[Debug] Username:", user.dbUser.username);
-    console.log(
-      "[Debug] Public Key Bundle (raw):",
-      user.dbUser.public_key_bundle.toString()
-    );
-    console.log("[Debug] Canonical String (dataToSign):", dataToSign);
-    console.log(
-      "[Debug] Pre-Quantum Public Key (base64):",
-      user.keyBundle.public.preQuantum.identitySigningPublicKey
-        .export({ format: "der", type: "spki" })
-        .toString("base64")
-    );
-    console.log("[Debug] Pre-Quantum Signature (base64):", preQuantumSignature);
+    // base 64
 
     return {
       pre_quantum_signature: useBadSignature ? "invalid" : preQuantumSignature,

@@ -49,13 +49,7 @@ async function getFileAccess(
       .then((rows) => rows[0]);
 
     if (ownedFile) {
-      return Promise.resolve(
-        ok({
-          ...ownedFile,
-          is_owner: true,
-        })
-      );
-    }
+      return ok({         ...ownedFile,         is_owner: true,       });
 
     // user has shared access?
     const sharedFile = await db
@@ -89,7 +83,7 @@ async function getFileAccess(
       .then((rows) => rows[0]);
 
     if (sharedFile) {
-      return Promise.resolve(
+      return (
         ok({
           file_id: sharedFile.file_id,
           storage_path: sharedFile.storage_path,
@@ -116,11 +110,9 @@ async function getFileAccess(
       );
     }
 
-    return Promise.resolve(err({ message: "File not found", status: 404 }));
+    return err({ message: "File not found", status: 404 });
   } catch (error) {
-    return Promise.resolve(
-      err({ message: "Internal Server Error", status: 500 })
-    );
+    return err({ message: "Internal Server Error", status: 500 });
   }
 }
 
