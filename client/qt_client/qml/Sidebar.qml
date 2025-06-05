@@ -11,8 +11,6 @@ Rectangle {
     width: 220
     color: white
 
-
-
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -31,76 +29,103 @@ Rectangle {
         // — Nav data —
         ListModel {
             id: navModel
-            ListElement { iconCode: "\uE2C8"; labelText: qsTr("All files") }
-            ListElement { iconCode: "\uE7FD"; labelText: qsTr("My files") }
-            ListElement { iconCode: "\uE7EF"; labelText: qsTr("Shared with me") }
+            ListElement { iconCode: "\ue2c8"; labelText: qsTr("All files") }
+            ListElement { iconCode: "\ue815"; labelText: qsTr("My files") }
+            ListElement { iconCode: "\ue2c9"; labelText: qsTr("Shared with me") }
         }
 
         Repeater {
-                    model: navModel
-                    delegate: Rectangle {
-                        id: navItem
-                        width: parent ? parent.width : root.width
-                        height: 30
-                        color: "transparent"
-                        property bool hovered: false
-                        Layout.fillWidth: true
+            model: navModel
+            delegate: Rectangle {
+                id: navItem
+                width: parent ? parent.width : root.width
+                height: 30
+                color: "transparent"
+                property bool hovered: false
+                Layout.fillWidth: true
 
-                        // icon + text, flush-left with 8px gap
-                        Row {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
+                // icon + text, flush-left with 8px gap
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
 
-                            Label {
-                                font.family: materialIcons.name
-                                font.pixelSize: 20
-                                text: iconCode
-                                color: navItem.hovered
-                                    ? Material.accent
-                                    : "#212121"
-                            }
+                    Label {
+                        font.pixelSize: 20
+                        text: iconCode
+                        color: navItem.hovered
+                            ? Material.accent
+                            : "#212121"
+                    }
 
-                            Label {
-                                text: labelText
-                                font.pixelSize: 16
-                                color: navItem.hovered
-                                    ? Material.accent
-                                    : "#212121"
-                            }
-                        }
-
-                        // MUST come *after* your Row so it's on top
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onEntered:  navItem.hovered = true
-                            onExited:   navItem.hovered = false
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked:  console.log("nav to", labelText)
-                        }
+                    Label {
+                        text: labelText
+                        font.pixelSize: 16
+                        color: navItem.hovered
+                            ? Material.accent
+                            : "#212121"
                     }
                 }
 
+                // MUST come *after* your Row so it's on top
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onEntered:  navItem.hovered = true
+                    onExited:   navItem.hovered = false
+                    cursorShape: Qt.PointingHandCursor
+
+                    onClicked: {
+                        if (labelText === "All files") {
+                            console.log("Requesting ALL files (page 1)…")
+                            fileListHandler.listAllFiles(1)
+                        }
+                        else if (labelText === "My files") {
+                            console.log("Requesting MY files (page 1)…")
+                            fileListHandler.listOwnedFiles(1)
+                        }
+                        else if (labelText === "Shared with me") {
+                            console.log("Requesting SHARED files (page 1)…")
+                            fileListHandler.listSharedFiles(1)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4) Spacer → pushes buttons to the right edge
+        Item {
+            Layout.fillWidth: true
+        }
 
 
         // FileUploadArea
-        FileUploadArea {
-            // signals: uploadRequested, cancelRequested…
+        FileUploadArea {}
+    }
+
+    // — Listen for filesLoaded and errorOccurred from C++ —
+    Connections {
+        target: fileListHandler
+
+        onFilesLoaded: {
+            console.log("=== filesLoaded signal received ===")
+            for (var i = 0; i < decryptedFiles.length; ++i) {
+                var f = decryptedFiles[i]
+                console.log(
+                    " • id=" + f.file_id
+                  + ", name=\"" + f.filename + "\""
+                  + ", size=" + f.size
+                  + ", modified=" + f.modified.toString()
+                  + ", owner?=" + f.is_owner
+                  + ", shared?=" + f.is_shared
+                  + ", shared_from=" + f.shared_from
+                )
+            }
         }
 
-
-        // storage usage
-        Label {
-            text: qsTr("Storage used: 75%")
-            font.pixelSize: 14
-            color: Material.onSurfaceVariant
-            Layout.margins: 8
-        }
-        ProgressBar {
-            value: 0.75
-            Layout.fillWidth: true
+        onErrorOccurred: {
+            console.error("Error occurred in FileListHandler: " + message)
         }
     }
 }

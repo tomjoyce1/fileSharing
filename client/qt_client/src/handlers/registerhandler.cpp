@@ -57,7 +57,7 @@ void RegisterHandler::doRegister(QString username, QString password)
         "/api/keyhandler/register",
         bodyString,
         {
-            // Only supply content-type. “Host” will be added below by toString().
+            // Only supply content-type. “Host” will be added by HttpRequest::toString()
             { "Content-Type", "application/json" }
         }
         );
@@ -66,22 +66,29 @@ void RegisterHandler::doRegister(QString username, QString password)
     AsioHttpClient httpClient;
     httpClient.init(""); // no TLS
 
-    // This version of sendRequest(...) pulls host/port from Config::instance() automatically:
+    // This version of sendRequest(...) pulls host/port from Config::instance():
     HttpResponse resp = httpClient.sendRequest(req);
 
     /* ❺  Interpret server response */
     QString title, msg;
     if (resp.statusCode == 201) {
-        /* success – persist user locally */
-        ClientStore::UserInfo u;
-        u.username  = username.toStdString();
-        u.keybundle = kb;
-        qDebug() << "above setUser";
-        if (store) store->setUser(u);
-        qDebug() << "below setUser";
-
-        title = "Success";
-        msg   = "Registration successful – you are now logged in.";
+        // Server says “Created”.  Now store the new user in our encrypted ClientStore.
+        try {
+            store->setUserWithPassword(
+                username.toStdString(),
+                password.toStdString(),
+                kb                      // “kb” holds both public+private keys in memory
+                );
+            qDebug().nospace() << "[registerhandler] piss";
+            title = "Success";
+            msg   = "Registration successful – you are now logged in.";
+        }
+        catch (const std::exception& ex) {
+            title = "Error";
+            msg   = QStringLiteral(
+                      "Registration on server succeeded, but saving credentials locally failed:\n%1"
+                      ).arg(ex.what());
+        }
     }
     else {
         title = "Error";
@@ -89,6 +96,8 @@ void RegisterHandler::doRegister(QString username, QString password)
                   .arg(resp.statusCode)
                   .arg(QString::fromStdString(resp.body));
     }
+
+    qDebug().nospace() << "[registerhandler] piss2";
 
     /* ❻  Emit result back on the UI thread */
     QMetaObject::invokeMethod(

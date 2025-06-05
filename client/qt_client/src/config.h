@@ -13,8 +13,8 @@ struct Config {
     int serverPort = 3000;
 
     // Timeouts, in milliseconds
-    std::chrono::milliseconds connectTimeoutMs = std::chrono::seconds(5);
-    std::chrono::milliseconds readTimeoutMs = std::chrono::seconds(10);
+    std::chrono::milliseconds connectTimeoutMs = std::chrono::milliseconds(5000);
+    std::chrono::milliseconds readTimeoutMs    = std::chrono::milliseconds(10000);
 
 private:
     Config();

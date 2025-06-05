@@ -61,3 +61,11 @@ void Signer_Dilithium::loadPrivateKey(const uint8_t* rawSk, size_t len) {
 
     _sk.assign(rawSk, rawSk + len);         // deep-copy into our vector
 }
+
+void Signer_Dilithium::loadPublicKey(const uint8_t* rawPk, size_t len)
+{
+    if (len != _oqs->length_public_key)
+        throw std::runtime_error("Signer_Dilithium::loadPublicKey wrong length");
+
+    _pk.assign(rawPk, rawPk + len);   // that’s all we need – verify() uses _pk
+}

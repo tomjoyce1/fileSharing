@@ -13,7 +13,12 @@ Item {                      //  ◄── was ApplicationWindow
 
     Material.theme: Material.Light
     Material.accent: Material.DeepPurple
-    // a very light purple backgroun
+
+    Component.onCompleted: {
+            console.log("MainView: calling listAllFiles(1) right after login")
+            fileListHandler.listAllFiles(1)
+        }
+
 
     RowLayout {
         anchors.fill: parent
@@ -22,7 +27,6 @@ Item {                      //  ◄── was ApplicationWindow
         // — Sidebar —
         Sidebar {
             appwin:appWin
-
             Layout.preferredWidth: 220
             Layout.fillHeight: true
         }
@@ -38,23 +42,6 @@ Item {                      //  ◄── was ApplicationWindow
                 Layout.fillWidth: true
             }
 
-            // A demo ListModel so you can see scrolling
-            ListModel {
-                id: demoFiles
-                ListElement { name: "Design Materials.zip";              size: "4.9 MB";  modified: "Jun 23, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Branding Package.pdf";              size: "3.7 MB";  modified: "Jun 22, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Key Visuals.jpg";                   size: "64 KB";   modified: "Jun 21, 2023"; sharedTo: "5 users" }
-                ListElement { name: "POSM mockup.jpg";                   size: "127 KB";  modified: "Jun 20, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Social Media Template 01.pptx";     size: "6.2 MB";  modified: "Jun 19, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Social Media Template 02.pptx";     size: "7.1 MB";  modified: "Jun 18, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Quotation / Invoice Tem... .xlsx";   size: "116 KB";  modified: "Jun 17, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Clients Document Te... .docx";     size: "93 MB";   modified: "Jun 16, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Contract Template.docx";            size: "87 MB";   modified: "Jun 15, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Clients Report Form New.docx";     size: "78 MB";   modified: "Jun 14, 2023"; sharedTo: "5 users" }
-                ListElement { name: "Content";                           size: "—";       modified: "18/05/2022"; sharedTo: "5 users" }
-                ListElement { name: "Content";                           size: "—";       modified: "27/01/2023"; sharedTo: "5 users" }
-                // add more ListElement entries if you like…
-            }
 
             // The white “card” container, under the top bar
             Item {
@@ -71,7 +58,6 @@ Item {                      //  ◄── was ApplicationWindow
                     FileTable {
                         anchors.fill: parent
                         anchors.margins: 12
-                        model: demoFiles
                     }
                 }
             }

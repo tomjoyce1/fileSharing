@@ -143,7 +143,7 @@ Item {
                                 pathList.push(t2)
                             }
                         }
-                        UploadHandler.uploadFiles(pathList)
+                        uploadHandler.uploadFiles(pathList)
                     }
                 }
 
@@ -169,7 +169,7 @@ Item {
 
     // ── Listen to UploadHandler.uploadResult(title, message) ───────
     Connections {
-        target: UploadHandler
+        target: uploadHandler
         function onUploadResult(title, message) {
             console.log("UploadHandler says:", title, message)
             // (You could pop up a MessageDialog here if you like.)

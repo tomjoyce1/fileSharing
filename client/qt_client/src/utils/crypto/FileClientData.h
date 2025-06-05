@@ -24,6 +24,9 @@
  * - this Pointer
  */
 struct FileClientData : public CryptoBase {
+    static constexpr std::size_t PUBLIC_NONCE_LEN = NONCE_LEN;
+    static constexpr std::size_t PUBLIC_KEY_LEN   = KEY_LEN;
+
     // AES‐256: 32‐byte FEK for file content
     std::array<uint8_t, KEY_LEN> fek{};
 
