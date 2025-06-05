@@ -21,6 +21,7 @@ export const schema = {
   },
 };
 
+// checks if the user owns the file with the given file_id
 async function doesOwnFile(
   file_id: number,
   owner_user_id: number
@@ -45,7 +46,7 @@ async function doesOwnFile(
     return err({ message: "Internal Server Error", status: 500 });
   }
 }
-
+// retrieves the user ID for a given username
 async function getUserId(username: string): Promise<Result<number, APIError>> {
   try {
     const user = await db
@@ -64,6 +65,7 @@ async function getUserId(username: string): Promise<Result<number, APIError>> {
   }
 }
 
+// checks if a share record exists for the given owner, shared user, and file
 async function findShareRecord(
   owner_user_id: number,
   shared_with_user_id: number,
@@ -89,6 +91,7 @@ async function findShareRecord(
   }
 }
 
+// deletes the share record for the given owner, shared user, and file
 async function deleteShareRecord(
   owner_user_id: number,
   shared_with_user_id: number,

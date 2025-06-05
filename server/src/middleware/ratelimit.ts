@@ -33,6 +33,7 @@ setInterval(() => {
   }
 }, RATELIMIT_CONFIG.windowMs);
 
+// utility function to get client IP from request headers
 function getClientIP(req: BurgerRequest): string | null {
   const xForwardedFor = req.headers.get("x-forwarded-for");
   if (xForwardedFor) {
