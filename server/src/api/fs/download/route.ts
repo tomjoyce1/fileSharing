@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BurgerRequest } from "burger-api";
 import { db } from "~/db";
-import { filesTable, sharedAccessTable, usersTable } from "~/db/schema";
+import { filesTable, sharedAccessTable } from "~/db/schema";
 import { getAuthenticatedUserFromRequest } from "~/utils/crypto/NetworkingHelper";
 import { ok, err, Result } from "neverthrow";
 import { existsSync, readFileSync } from "node:fs";
@@ -35,10 +35,8 @@ async function getFileAccess(
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
-        owner_username: usersTable.username,
       })
       .from(filesTable)
-      .innerJoin(usersTable, eq(usersTable.user_id, filesTable.owner_user_id))
       .where(
         and(
           eq(filesTable.file_id, file_id),
@@ -64,7 +62,6 @@ async function getFileAccess(
         pre_quantum_signature: filesTable.pre_quantum_signature,
         post_quantum_signature: filesTable.post_quantum_signature,
         owner_user_id: filesTable.owner_user_id,
-        owner_username: usersTable.username,
         encrypted_fek: sharedAccessTable.encrypted_fek,
         encrypted_fek_nonce: sharedAccessTable.encrypted_fek_nonce,
         encrypted_mek: sharedAccessTable.encrypted_mek,
@@ -81,7 +78,6 @@ async function getFileAccess(
           eq(sharedAccessTable.shared_with_user_id, user_id)
         )
       )
-      .innerJoin(usersTable, eq(usersTable.user_id, filesTable.owner_user_id))
       .where(eq(filesTable.file_id, file_id))
       .limit(1)
       .then((rows) => rows[0]);
@@ -94,7 +90,6 @@ async function getFileAccess(
         pre_quantum_signature: sharedFile.pre_quantum_signature,
         post_quantum_signature: sharedFile.post_quantum_signature,
         owner_user_id: sharedFile.owner_user_id,
-        owner_username: sharedFile.owner_username,
         is_owner: false,
         shared_access: {
           encrypted_fek: sharedFile.encrypted_fek.toString("base64"),

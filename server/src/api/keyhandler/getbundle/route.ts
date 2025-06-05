@@ -57,6 +57,7 @@ export async function POST(
 
   const { username } = req.validated.body;
 
+  // authenticate user and verify request signature
   const userResult = await getAuthenticatedUserFromRequest(
     req,
     JSON.stringify(req.validated.body)

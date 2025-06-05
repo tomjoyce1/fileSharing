@@ -28,6 +28,7 @@ async function getAccessibleFiles(
   try {
     const offset = (page - 1) * PAGE_SIZE;
 
+    // Use UNION ALL to combine owned and shared files, then apply ordering and pagination
     const query = sql`
       SELECT
         f.file_id,
@@ -43,8 +44,7 @@ async function getAccessibleFiles(
         NULL as encrypted_mek_nonce,
         NULL as ephemeral_public_key,
         NULL as file_content_nonce,
-        NULL as metadata_nonce,
-        u.username as owner_username
+        NULL as metadata_nonce
       FROM ${filesTable} f
       INNER JOIN ${usersTable} u ON f.owner_user_id = u.user_id
       WHERE f.owner_user_id = ${user_id}
@@ -65,8 +65,7 @@ async function getAccessibleFiles(
         sa.encrypted_mek_nonce,
         sa.ephemeral_public_key,
         sa.file_content_nonce,
-        sa.metadata_nonce,
-        u.username as owner_username
+        sa.metadata_nonce
       FROM ${sharedAccessTable} sa
       INNER JOIN ${filesTable} f ON sa.file_id = f.file_id
       INNER JOIN ${usersTable} u ON f.owner_user_id = u.user_id
@@ -78,10 +77,10 @@ async function getAccessibleFiles(
     `;
 
     const results = await db.all(query);
-
     const hasNextPage = results.length > PAGE_SIZE;
     const files = hasNextPage ? results.slice(0, PAGE_SIZE) : results;
 
+    // format response
     const fileList: FileMetadataListItem[] = files.map((row: any) => {
       const baseFile: FileMetadataListItem = {
         file_id: row.file_id,
@@ -96,6 +95,7 @@ async function getAccessibleFiles(
         owner_username: row.owner_username,
       };
 
+      // Add shared access data if this is a shared file
       if (!row.is_owner && row.encrypted_fek) {
         baseFile.shared_access = {
           encrypted_fek: Buffer.from(row.encrypted_fek).toString("base64"),
@@ -132,6 +132,7 @@ export async function POST(
     return Response.json({ message: "Internal Server Error" }, { status: 500 });
   }
 
+  // authenticate user
   const { page } = req.validated.body;
   const userResult = await getAuthenticatedUserFromRequest(
     req,
@@ -141,6 +142,7 @@ export async function POST(
     return Response.json({ message: "Unauthorized" }, { status: 401 });
   }
 
+  // get accessible files with page-based pagination
   const user = userResult.value;
   const filesResult = await getAccessibleFiles(user.user_id, page);
   if (filesResult.isErr()) {

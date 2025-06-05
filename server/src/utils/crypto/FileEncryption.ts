@@ -43,8 +43,6 @@ export function encryptFileContent(
     encrypted_data.set(encrypted1);
     encrypted_data.set(encrypted2, encrypted1.length);
 
-    // Log details of the encryption process
-
     return ok({
       encrypted_data,
       nonce: fileNonce,
@@ -105,8 +103,6 @@ function encryptMetadata(
     );
     encrypted_data.set(encrypted1);
     encrypted_data.set(encrypted2, encrypted1.length);
-
-    // Log details of the encryption process
 
     return ok({
       encrypted_data,
