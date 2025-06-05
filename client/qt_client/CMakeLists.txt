@@ -127,6 +127,8 @@ add_executable(qt_client
     src/utils/NetworkAuthUtils.h
     src/config.h src/config.cpp
     src/utils/networking/HttpResult.h
+    src/handlers/filelisthandler.h src/handlers/filelisthandler.cpp
+    src/handlers/filedownloadhandler.h src/handlers/filedownloadhandler.cpp
 )
 
 # ─────────────────────────────────────────────────────────────

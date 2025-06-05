@@ -21,6 +21,7 @@ export const schema = {
   },
 };
 
+// registers a new user with the provided username and key bundle
 async function registerUser(
   username: string,
   key_bundle: z.infer<typeof KeyBundlePublicSerializable>
@@ -38,6 +39,7 @@ async function registerUser(
   }
 }
 
+// handles the POST request to register a new user
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {

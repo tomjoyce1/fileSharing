@@ -21,6 +21,7 @@ export interface ClientFileData {
   metadataNonce: Uint8Array;
 }
 
+// encrypts the file content using a file encryption key (FEK)
 export function encryptFileContent(
   content: Uint8Array,
   fek: Uint8Array
@@ -53,6 +54,7 @@ export function encryptFileContent(
   }
 }
 
+// decrypts the file content using a file encryption key (FEK)
 function decryptFileContentWithFEK(
   encryptedData: EncryptedData,
   fek: Uint8Array
@@ -79,6 +81,7 @@ function decryptFileContentWithFEK(
   }
 }
 
+// encrypts metadata using a metadata encryption key (MEK)
 function encryptMetadata(
   metadata: any,
   mek: Uint8Array
@@ -114,6 +117,7 @@ function encryptMetadata(
   }
 }
 
+// decrypts metadata using a metadata encryption key (MEK)
 function decryptMetadataWithMEK(
   encryptedData: EncryptedData,
   mek: Uint8Array
@@ -145,6 +149,7 @@ function decryptMetadataWithMEK(
   }
 }
 
+// encrypts a file's content and metadata, returning the encrypted data and client data
 export function encryptFile(
   plaintext_content: Uint8Array,
   plaintext_metadata: any
@@ -189,6 +194,7 @@ export function encryptFile(
   }
 }
 
+// decrypts a file's content using the file encryption key (FEK)
 export function decryptFileContent(
   encrypted_content: EncryptedData,
   fek: Uint8Array
@@ -200,6 +206,7 @@ export function decryptFileContent(
   }
 }
 
+// decrypts metadata using the metadata encryption key (MEK) from client data
 export function decryptMetadata(
   encrypted_metadata: EncryptedData,
   client_data: ClientFileData
@@ -212,6 +219,7 @@ export function decryptMetadata(
   }
 }
 
+// creates a file signature based on the owner's username, file content, and metadata
 export function createFileSignature(
   owner_username: string,
   file_content: string,

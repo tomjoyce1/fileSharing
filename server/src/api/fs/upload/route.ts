@@ -31,6 +31,7 @@ export const schema = {
   },
 };
 
+// generates a unique storage path for the file
 function generateUniqueStoragePath(): string {
   const baseDir = join(process.cwd(), "encrypted-drive");
   let storagePath: string;
@@ -43,6 +44,7 @@ function generateUniqueStoragePath(): string {
   return storagePath;
 }
 
+// writes the file content to disk after validating it
 function writeFileContent(
   storage_path: string,
   file_content: string
@@ -69,6 +71,7 @@ function writeFileContent(
   }
 }
 
+// cleans up the file from disk if it exists
 function cleanupFile(storage_path: string): void {
   try {
     if (existsSync(storage_path)) {
@@ -80,6 +83,7 @@ function cleanupFile(storage_path: string): void {
   }
 }
 
+// verifies the file signatures using the user's public key bundle
 function verifyFileSignatures(
   username: string,
   file_content: string,
@@ -114,6 +118,7 @@ function verifyFileSignatures(
   }
 }
 
+// inserts a new file record into the database
 async function insertFileRecord(
   user_id: number,
   storage_path: string,
@@ -145,6 +150,7 @@ async function insertFileRecord(
   }
 }
 
+// main POST handler for file upload
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {

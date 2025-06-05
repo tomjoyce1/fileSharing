@@ -1,3 +1,4 @@
+
 // qml/Login.qml
 import QtQuick 2.15
 import QtQuick.Controls 2.15
@@ -46,7 +47,7 @@ Item {
 
         Connections {
             target: loginHandler
-            onLoginResult: {
+            onLoginResult: function(title, message) {
                 if (title === "Success") {
                     appWin.loggedIn = true
                 } else {
@@ -55,6 +56,7 @@ Item {
                 }
             }
         }
+
 
         // link to register
         Label {

@@ -33,6 +33,12 @@ public:
         const std::vector<uint8_t>& dilithiumPrivate
         );
 
+    KeyBundle(
+        const std::vector<uint8_t>& x25519Public,
+        const std::vector<uint8_t>& ed25519Public,
+        const std::vector<uint8_t>& dilithiumPublic
+        );
+
     KeyBundle(const KeyBundle& other);
     KeyBundle& operator=(const KeyBundle& other);
     KeyBundle(KeyBundle&& other) noexcept;

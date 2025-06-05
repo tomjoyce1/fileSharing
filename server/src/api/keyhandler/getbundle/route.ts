@@ -17,6 +17,7 @@ export const schema = {
   },
 };
 
+// retrieves the public key bundle for a user
 async function getUserKeyBundle(
   username: string
 ): Promise<Result<any, APIError>> {
@@ -41,6 +42,7 @@ async function getUserKeyBundle(
   }
 }
 
+// handles the POST request to retrieve a user's public key bundle
 export async function POST(
   req: BurgerRequest<{ body: z.infer<typeof schema.post.body> }>
 ) {

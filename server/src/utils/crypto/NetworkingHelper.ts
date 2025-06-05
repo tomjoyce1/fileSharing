@@ -24,6 +24,7 @@ export function createCanonicalRequestString(
   return `${username}|${timestamp}|${method}|${path}|${body}`;
 }
 
+//creates signatures for the canonical request string using both pre-quantum and post-quantum keys
 export function createSignatures(
   canonicalString: string,
   privateBundle: KeyBundlePrivate
@@ -52,6 +53,7 @@ export function createSignatures(
   return { preQuantum: preQuantumSignature, postQuantum: postQuantumSignature };
 }
 
+// parses the combined signature string into pre-quantum and post-quantum signatures
 function parseSignatures(
   signature: string
 ): { preQuantum: string; postQuantum: string } | null {
@@ -59,6 +61,7 @@ function parseSignatures(
   return preQuantum && postQuantum ? { preQuantum, postQuantum } : null;
 }
 
+// checks if the request timestamp is within the allowed replay attack window
 function isWithinReplayWindow(timestamp: string): boolean {
   const requestTime = new Date(timestamp);
   const now = new Date();
@@ -66,6 +69,7 @@ function isWithinReplayWindow(timestamp: string): boolean {
   return timeDiff <= REPLAY_ATTACK_WINDOW_MS;
 }
 
+// verifies the signatures of the canonical request string against the public key bundle
 async function verifySignatures(
   canonicalString: string,
   signatures: { preQuantum: string; postQuantum: string },
@@ -93,6 +97,7 @@ async function verifySignatures(
   }
 }
 
+// creates the request headers with the necessary authentication information
 function createRequestHeaders(
   username: string,
   timestamp: string,
@@ -106,6 +111,7 @@ function createRequestHeaders(
   });
 }
 
+// creates a signed request with the provided options
 async function _createSignedRequest(options: {
   method: string;
   path: string;
@@ -145,6 +151,7 @@ async function _createSignedRequest(options: {
   });
 }
 
+// creates a signed POST request with the provided path and request body
 export async function createSignedPOST(
   path: string,
   requestBody: any,
@@ -167,6 +174,7 @@ export async function createSignedPOST(
   return fetch(signedRequest);
 }
 
+// creates a signed GET request with the provided path and query parameters
 export async function createSignedGET(
   path: string,
   queryParams: Record<string, string> = {},
