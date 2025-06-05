@@ -50,19 +50,24 @@ function writeFileContent(
   file_content: string
 ): Result<void, APIError> {
   try {
+    // Validate base64 format more strictly
     const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
     if (!base64Regex.test(file_content)) {
       return err({ message: "File Write Error", status: 400 });
     }
 
+    // Decode and re-encode to verify it's actually valid base64
     const decoded = Buffer.from(file_content, "base64");
     const reencoded = decoded.toString("base64");
     if (reencoded !== file_content) {
       return err({ message: "File Write Error", status: 400 });
     }
 
+    // Ensure the directory exists
     const dir = dirname(storage_path);
     mkdirSync(dir, { recursive: true });
+
+    // Write to disk
     writeFileSync(storage_path, decoded);
 
     return ok(undefined);
@@ -165,6 +170,7 @@ export async function POST(
     post_quantum_signature,
   } = req.validated.body;
 
+  // Authenticate user and get user from database
   const userResult = await getAuthenticatedUserFromRequest(
     req,
     JSON.stringify(req.validated.body)
@@ -175,10 +181,12 @@ export async function POST(
 
   const user = userResult.value;
 
+  // ensure file size is within limit
   if (file_content.length > MAX_FILE_SIZE) {
     return Response.json({ message: "File too large" }, { status: 413 });
   }
 
+  // Verify file record signatures
   const userPublicBundle = deserializeKeyBundlePublic(
     JSON.parse(user.public_key_bundle.toString())
   );
@@ -200,6 +208,7 @@ export async function POST(
     );
   }
 
+  // Generate unique storage path and write file to disk
   const storage_path = generateUniqueStoragePath();
   const writeResult = writeFileContent(storage_path, file_content);
 
@@ -211,6 +220,7 @@ export async function POST(
     );
   }
 
+  // Insert file record into database
   const insertResult = await insertFileRecord(
     user.user_id,
     storage_path,
@@ -220,7 +230,9 @@ export async function POST(
   );
 
   if (insertResult.isErr()) {
+    // Database failed, try cleanup the file we just wrote
     cleanupFile(storage_path);
+
     const apiError = insertResult.error;
     return Response.json(
       { message: apiError.message },

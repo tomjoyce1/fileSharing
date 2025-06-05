@@ -4,7 +4,6 @@ import {
   createPrivateKey,
   createPublicKey,
 } from "node:crypto";
-import { Buffer } from "buffer";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa";
 import type {
   KeyBundlePrivate,
@@ -115,65 +114,26 @@ export function serializeKeyBundlePublic(
 export function deserializeKeyBundlePublic(
   serialized: z.infer<typeof KeyBundlePublicSerializable>
 ): KeyBundlePublic {
-  try {
-    const kemKeyBuffer = Buffer.from(
-      serialized.preQuantum.identityKemPublicKey,
-      "base64"
-    );
-    const signingKeyBuffer = Buffer.from(
-      serialized.preQuantum.identitySigningPublicKey,
-      "base64"
-    );
-
-    // Check if the buffer is PEM, DER, or raw
-    const isPem = kemKeyBuffer.toString().includes("-----BEGIN");
-
-    // Validate key buffers
-    if (kemKeyBuffer.length === 0 || signingKeyBuffer.length === 0) {
-      console.error("[Error] Key buffer is empty or invalid:", {
-        kemKeyBuffer,
-        signingKeyBuffer,
-      });
-      throw new Error("Key buffer is empty or invalid");
-    }
-
-    // Convert raw keys to DER format if necessary
-    const kemKey = isPem
-      ? kemKeyBuffer
-      : Buffer.concat([
-          Buffer.from("302a300506032b656e032100", "hex"), // ASN.1 header for X25519
-          kemKeyBuffer,
-        ]);
-
-    const isAlreadyDER =
-      signingKeyBuffer.length === 44 && signingKeyBuffer[0] === 0x30;
-    const signingKey = isAlreadyDER
-      ? signingKeyBuffer
-      : Buffer.concat([
-          Buffer.from("302a300506032b6570032100", "hex"),
-          signingKeyBuffer,
-        ]);
-
-    return {
-      preQuantum: {
-        identityKemPublicKey: createPublicKey({
-          key: kemKey,
-          format: "der",
-          type: "spki",
-        }),
-        identitySigningPublicKey: createPublicKey({
-          key: signingKey,
-          format: "der",
-          type: "spki",
-        }),
-      },
-      postQuantum: {
-        identitySigningPublicKey: new Uint8Array(
-          Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
+  return {
+    preQuantum: {
+      identityKemPublicKey: createPublicKey({
+        key: Buffer.from(serialized.preQuantum.identityKemPublicKey, "base64"),
+        format: "der",
+        type: "spki",
+      }),
+      identitySigningPublicKey: createPublicKey({
+        key: Buffer.from(
+          serialized.preQuantum.identitySigningPublicKey,
+          "base64"
         ),
-      },
-    };
-  } catch (error) {
-    throw error;
-  }
+        format: "der",
+        type: "spki",
+      }),
+    },
+    postQuantum: {
+      identitySigningPublicKey: new Uint8Array(
+        Buffer.from(serialized.postQuantum.identitySigningPublicKey, "base64")
+      ),
+    },
+  };
 }

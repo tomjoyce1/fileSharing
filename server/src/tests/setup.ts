@@ -127,7 +127,6 @@ class TestFileHelper {
         Buffer.from(dataToSign)
       )
     ).toString("base64");
-    // base 64
 
     return {
       pre_quantum_signature: useBadSignature ? "invalid" : preQuantumSignature,
@@ -359,10 +358,10 @@ class TestSharingHelper extends TestFileHelper {
       encoding: "der",
     });
 
-    const sharedSecret = this.deriveSharedSecret(
-      ephemeralPublicKey,
-      recipientPrivateKeyBundle.preQuantum.identityKem.privateKey
-    );
+    const sharedSecret = diffieHellman({
+      privateKey: recipientPrivateKeyBundle.preQuantum.identityKem.privateKey,
+      publicKey: ephemeralPublicKey,
+    });
 
     const fekNonce = Buffer.from(sharedAccess.encrypted_fek_nonce, "base64");
     const fek = this.decryptWithSharedSecret(
