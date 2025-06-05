@@ -6,6 +6,7 @@ import { db } from "~/db";
 import { usersTable } from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { deserializeKeyBundlePublic } from "./KeyHelper";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 
 export const DEFAULT_BASE_URL = "http://localhost:3000";
 const REPLAY_ATTACK_WINDOW_MS = 60 * 1000;
@@ -28,6 +29,14 @@ export function createSignatures(
   canonicalString: string,
   privateBundle: KeyBundlePrivate
 ): { preQuantum: string; postQuantum: string } {
+  if (!privateBundle?.preQuantum?.identitySigning?.privateKey) {
+    throw new Error("Pre-Quantum identitySigning private key is undefined");
+  }
+
+  if (!privateBundle?.postQuantum?.identitySigning?.privateKey) {
+    throw new Error("Post-Quantum identitySigning private key is undefined");
+  }
+
   const preQuantumSignature = nodeSign(
     null,
     Buffer.from(canonicalString),
@@ -210,12 +219,9 @@ async function verifyRequestSignature(
   if (!signatures) {
     return null;
   }
-
-  // use provided body or read from request
   const requestBody =
     providedBody !== undefined ? providedBody : await request.clone().text();
 
-  // extract just the path from the full URL to match signature creation
   const requestUrl = new URL(request.url);
   const requestPath = requestUrl.pathname;
 
@@ -227,13 +233,19 @@ async function verifyRequestSignature(
     requestBody
   );
 
-  const isValid = await verifySignatures(
-    canonicalString,
-    signatures,
-    publicBundle
-  );
-
-  return isValid ? username : null;
+  try {
+    const isValid = await verifySignatures(
+      canonicalString,
+      signatures,
+      publicBundle
+    );
+    if (!isValid) {
+      return null;
+    }
+    return username;
+  } catch {
+    return null;
+  }
 }
 
 export async function getAuthenticatedUserFromRequest(
@@ -246,7 +258,6 @@ export async function getAuthenticatedUserFromRequest(
   }
 
   try {
-    // get user from database
     const user = await db
       .select()
       .from(usersTable)
@@ -258,12 +269,10 @@ export async function getAuthenticatedUserFromRequest(
       return err("User not found");
     }
 
-    // verify request signature
     const userPublicBundle = deserializeKeyBundlePublic(
       JSON.parse(user.public_key_bundle.toString())
     );
 
-    // use provided body or read from request
     const requestBody = body !== undefined ? body : await req.clone().text();
 
     const authenticatedUsername = await verifyRequestSignature(

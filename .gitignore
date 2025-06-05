@@ -16,6 +16,7 @@
 *_resource.rc
 *.qm
 .#*
+*.npmrc
 *.*#
 core
 !core/
@@ -71,7 +72,7 @@ CMakeLists.txt.user*
 # --------
 *.dll
 *.exe
-
+*.enc
 # Qt Creator / IDE files (if you don’t want to check them in)
 *.user
 *.pro.user*
@@ -95,6 +96,9 @@ CMakeLists.txt.user*
 /client/qt_client/*.dll
 /client/qt_client/*.lib
 
+/client/webapp/filestoragewebapp/src/env.js
+
+/client/webapp/filestoragewebappeslint.config.js
 # General temporary / backup
 *~
 *.swp
