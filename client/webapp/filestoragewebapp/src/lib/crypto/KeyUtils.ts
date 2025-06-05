@@ -13,11 +13,26 @@ export class KeyError extends Error {
   }
 }
 
+// Connection pool for IndexedDB
+let dbConnection: IDBDatabase | null = null;
+let dbConnectionPromise: Promise<IDBDatabase> | null = null;
+
 /**
  * Opens or creates the IndexedDB database for key storage
  */
 export async function openKeyDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  // If we already have a connection, return it
+  if (dbConnection) {
+    return dbConnection;
+  }
+
+  // If we're already in the process of opening a connection, return that promise
+  if (dbConnectionPromise) {
+    return dbConnectionPromise;
+  }
+
+  // Create a new connection
+  dbConnectionPromise = new Promise((resolve, reject) => {
     try {
       const dbName = "DriveKeysDB";
       const dbVersion = 2;
@@ -34,7 +49,8 @@ export async function openKeyDB(): Promise<IDBDatabase> {
 
       request.onsuccess = () => {
         console.log(`[KeyUtils] openKeyDB: Successfully opened dbName=${dbName}`);
-        resolve(request.result);
+        dbConnection = request.result;
+        resolve(dbConnection);
       };
 
       request.onerror = (event) => {
@@ -47,6 +63,19 @@ export async function openKeyDB(): Promise<IDBDatabase> {
       reject(new KeyError("Failed to initialize database", err as Error));
     }
   });
+
+  return dbConnectionPromise;
+}
+
+/**
+ * Close the IndexedDB connection
+ */
+export async function closeKeyDB(): Promise<void> {
+  if (dbConnection) {
+    dbConnection.close();
+    dbConnection = null;
+    dbConnectionPromise = null;
+  }
 }
 
 /**

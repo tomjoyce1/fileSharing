@@ -32,6 +32,8 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://localhost:3001",
+        //        target: "https://packetsniffers.gobbler.info/",
+
         changeOrigin: true,
         secure: false,
       },

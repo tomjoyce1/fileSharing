@@ -44,11 +44,8 @@ export async function createFileSignatureCanonical(username: string, file_conten
   const fileContentHash = await sha256Hex(file_content);
   const metadataHash = await sha256Hex(metadata);
   const canonical = `${username}|${fileContentHash}|${metadataHash}`;
-  console.log('[FileSign] Canonical String:', canonical);
   
-  console.log('[FileSign] file_content SHA256:', fileContentHash);
-  console.log('[FileSign] metadata SHA256:', metadataHash);
-  return canonical;
+   return canonical;
 }
 
 export function encryptFile(
@@ -165,10 +162,7 @@ export function createAuthenticatedRequest(
     'X-Signature': `${preQuantumSigB64}||${postQuantumSigB64}`,
   };
   // logging
-  console.log("Canonical String:", canonicalString.substring(0, 200));
-  console.log("Pre-Quantum Signature:", preQuantumSigB64.substring(0, 200));
-  console.log("Post-Quantum Signature:", postQuantumSigB64.substring(0, 200));
-
+ 
   return { headers, body: bodyString };
 }
 
@@ -187,21 +181,17 @@ export async function uploadFile(
   try {
     // Log file size before encryption
     const fileSizeMB = fileContent.length / (1024 * 1024);
-    console.log(`[Upload] File size before encryption: ${fileSizeMB.toFixed(2)} MB`);
 
     // Step 1: Encrypt the file and metadata
     const encryptionResult = encryptFile(fileContent, metadata);
     
     // Log encrypted size
-    const encryptedSizeMB = encryptionResult.encryptedContent.length / (1024 * 1024);
-    console.log(`[Upload] Encrypted file size: ${encryptedSizeMB.toFixed(2)} MB`);
 
     // Step 2: Convert encrypted data to base64 for transmission using the new method
     const encryptedFileBase64 = arrayBufferToBase64(encryptionResult.encryptedContent.buffer);
     const encryptedMetadataBase64 = arrayBufferToBase64(encryptionResult.encryptedMetadata.buffer);
     
     // Log base64 size
-    console.log(`[Upload] Base64 encoded size: ${(encryptedFileBase64.length / (1024 * 1024)).toFixed(2)} MB`);
 
     // Step 3: Generate file signatures (await)
     const fileSignatures = await generateFileSignatures(
@@ -220,8 +210,8 @@ export async function uploadFile(
     };
 
     // Log request body size
-    const requestBodySize = JSON.stringify(requestBody).length;
-    console.log(`[Upload] Request body size: ${(requestBodySize / (1024 * 1024)).toFixed(2)} MB`);
+    // const requestBodySize = JSON.stringify(requestBody).length;
+    // console.log(`[Upload] Request body size: ${(requestBodySize / (1024 * 1024)).toFixed(2)} MB`);
 
     const bodyString = JSON.stringify(requestBody);
     // Step 5: Create authenticated request (for headers, use timestamp etc. as before)
@@ -243,7 +233,7 @@ export async function uploadFile(
       'X-Signature': `${preQuantumSigB64}||${postQuantumSigB64}`,
     };
     // logging
-    console.log('[Upload] Headers:', JSON.stringify(headers, null, 2));
+    // console.log('[Upload] Headers:', JSON.stringify(headers, null, 2));
     console.log('[Upload] Starting upload request...');
     
     // Step 6: Send HTTP request
@@ -255,21 +245,21 @@ export async function uploadFile(
     // Step 7: Handle response
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('[UPLOAD ERROR]', errorData.message || `HTTP ${response.status}`);
+      console.error('[UPLOAD ERROR]');
       return {
         success: false,
         error: errorData.message || `HTTP ${response.status}`,
       };
     }
     const responseData = await response.json();
-    console.log('[UPLOAD SUCCESS]', responseData);
+    console.log('[UPLOAD SUCCESS]');
     return {
       success: true,
       fileId: responseData.file_id,
       clientData: encryptionResult.clientData,
     };
   } catch (error) {
-    console.error('[UPLOAD ERROR]', error instanceof Error ? error.stack || error.message : error);
+    console.error('[UPLOAD ERROR]');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

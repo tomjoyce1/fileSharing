@@ -32,17 +32,16 @@ export function useDriveFiles(
       }
       setIsLoading(true);
       try {
-        // Load private keys for signing
         const ed25519Priv = await getDecryptedPrivateKey(username, 'ed25519', password);
         const mldsaPriv = await getDecryptedPrivateKey(username, 'mldsa', password);
-        console.log(`[newLogs] ed25519Priv:`, ed25519Priv ? '[OK]' : '[MISSING]');
-        console.log(`[newLogs] mldsaPriv:`, mldsaPriv ? '[OK]' : '[MISSING]');
+
         if (!ed25519Priv || !mldsaPriv) {
           setError("Could not load your private keys. Please log in again.");
           setFiles([]);
           setHasNextPage(false);
           return;
         }
+
         const privateKeyBundle = {
           preQuantum: {
             identitySigning: { privateKey: ed25519Priv },
@@ -59,16 +58,15 @@ export function useDriveFiles(
           username,
           privateKeyBundle
         );
-        console.log("[ListLog] Sending signed POST /api/fs/list", { headers, body });
+
         const response = await fetch("/api/fs/list", {
           method: "POST",
           headers,
           body: bodyString,
         });
-        console.log("[ListLog] Response status:", response.status);
+
         if (response.status === 401) {
           const errorText = await response.text();
-          console.error("[ListLog] 401 Unauthorized:", errorText);
           setError("Authentication failed. Please try clicking Retry. If that doesn't work, you may need to log in again.");
           setFiles([]);
           setHasNextPage(false);
@@ -76,11 +74,9 @@ export function useDriveFiles(
         }
         if (!response.ok) throw new Error("Failed to fetch files");
         const { fileData, hasNextPage } = await response.json();
-        console.log("[ListLog] Received fileData:", fileData);
         setFiles(fileData);
         setHasNextPage(hasNextPage);
       } catch (err) {
-        console.error("[ListLog] Error fetching files:", err);
         setError(err instanceof Error ? err.message : "Failed to fetch files");
         setFiles([]);
         setHasNextPage(false);

@@ -99,7 +99,7 @@ export function serializeKeyBundlePublic(bundle: KeyBundlePublic): string {
 export function deserializeKeyBundlePublic(
   serialized: any // Accept plain object
 ): KeyBundlePublic {
-  console.log("[Debug] Serialized Key Bundle:", serialized);
+  
 
   const kemKeyBuffer = Buffer.from(
     serialized.preQuantum.identityKemPublicKey,
