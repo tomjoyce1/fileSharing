@@ -29,9 +29,9 @@ Rectangle {
         // — Nav data —
         ListModel {
             id: navModel
-            ListElement { iconCode: "\ue2c8"; labelText: qsTr("All files") }
-            ListElement { iconCode: "\ue815"; labelText: qsTr("My files") }
-            ListElement { iconCode: "\ue2c9"; labelText: qsTr("Shared with me") }
+            ListElement { iconCode: "\u2022"; labelText: qsTr("All files") }
+            ListElement { iconCode: "\u2022"; labelText: qsTr("My files") }
+            ListElement { iconCode: "\u2022"; labelText: qsTr("Shared with me") }
         }
 
         Repeater {

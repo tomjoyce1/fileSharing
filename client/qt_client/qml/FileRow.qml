@@ -177,11 +177,7 @@ Item {
                 text: qsTr("Revoke")
                 Layout.preferredHeight: 28
                 padding: 8
-                onClicked: {
-                            revokeRequested(root.fileId, revokeField.text)
-                            revokeField.text = ""
-                            revokeDialog.close()
-                }
+                onClicked: revokeDialog.open()
 
                 background: Rectangle {
                     anchors.fill: parent
