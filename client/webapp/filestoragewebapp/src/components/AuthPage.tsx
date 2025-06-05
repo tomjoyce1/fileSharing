@@ -385,6 +385,9 @@ console.log("mldsaTest length:", mldsaTest?.length);
           }
           if (res.ok) {
             setLoading(false);
+            localStorage.setItem("drive_username", username);
+
+            (window as any).inMemoryPassword = password; // Store password in memory
             onAuthSuccess(username);
           } else {
             setError(errorMsg);
